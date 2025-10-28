@@ -1,23 +1,27 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types/navigation'; // ajuste o caminho se necessário
 
-const { width } = Dimensions.get('window'); // Obtém a largura da tela
+const { width } = Dimensions.get('window');
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 const HomeScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp>();
 
   return (
     <View style={styles.container}>
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: '#FF5733' }]} // Cor personalizada
+        style={[styles.button, { backgroundColor: '#FF5733' }]}
         onPress={() => navigation.navigate('Orders')}
       >
         <Text style={styles.buttonText}>Pedidos</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: '#33B5FF' }]} // Cor personalizada
+        style={[styles.button, { backgroundColor: '#33B5FF' }]}
         onPress={() => navigation.navigate('Products')}
       >
         <Text style={styles.buttonText}>Produtos</Text>
@@ -29,18 +33,18 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center', // Alinha os botões no centro horizontalmente
-    justifyContent: 'flex-start', // Alinha os botões no topo
-    paddingTop: 20, // Espaçamento no topo
-    backgroundColor: '#f5f5f5', // Cor de fundo
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 20,
+    backgroundColor: '#f5f5f5',
   },
   button: {
-    width: width * 0.9, // Botão ocupa 90% da largura da tela
-    height: 50, // Altura do botão
+    width: width * 0.9,
+    height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15, // Espaçamento entre os botões
-    borderRadius: 5, // Bordas arredondadas (opcional)
+    marginBottom: 15,
+    borderRadius: 5,
   },
   buttonText: {
     color: '#fff',

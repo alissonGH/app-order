@@ -1,251 +1,203 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
+  Switch,
   Modal,
-  Alert,
   ScrollView,
-  Switch
-} from 'react-native';
-import DropDownPicker from 'react-native-dropdown-picker';
+  Alert,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import OrderModal from "../components/OrderModal";
+import { THEME } from "../styles/theme";
+
+/**
+ * OrdersScreen atualizado para:
+ * - exibir preview das observações (resumo) no card (limitado a 80 chars)
+ * - manter demais funcionalidades e confirmações
+ */
+
+const productsList = [
+  { id: 1, name: "Produto A", price: 40.0 },
+  { id: 2, name: "Produto B", price: 25.0 },
+  { id: 3, name: "Produto C", price: 15.5 },
+  { id: 4, name: "Produto D", price: 30.0 },
+  { id: 5, name: "Produto E", price: 20.0 },
+  { id: 6, name: "Produto F", price: 50.0 },
+  { id: 7, name: "Produto G", price: 10.0 },
+  { id: 8, name: "Produto H", price: 22.5 },
+  { id: 9, name: "Produto I", price: 35.0 },
+  { id: 10, name: "Produto J", price: 18.0 },
+];
+
+const truncate = (str, n) => {
+  if (!str) return "";
+  return str.length > n ? str.slice(0, n).trimEnd() + "…" : str;
+};
 
 const OrdersScreen = () => {
-  const [orders, setOrders] = useState([
-    {
-      id: 1,
-      customer: 'João Silva',
-      tableNumber: 5,
-      creationDate: new Date().toISOString(),
-      orderStatus: 'PENDING',
-      totalValue: 120.5,
-      items: [
-        { product: { name: 'Pizza Margherita' }, quantity: 1, subTotal: 35.0 },
-        { product: { name: 'Refrigerante Lata' }, quantity: 2, subTotal: 15.0 },
-        { product: { name: 'Brownie' }, quantity: 2, subTotal: 70.5 },
-      ],
-    },
-    {
-      id: 2,
-      customer: 'Maria Oliveira',
-      tableNumber: 3,
-      creationDate: new Date().toISOString(),
-      orderStatus: 'CONCLUDED',
-      totalValue: 85.0,
-      items: [
-        { product: { name: 'Pasta Alfredo' }, quantity: 1, subTotal: 50.0 },
-        { product: { name: 'Água com Gás' }, quantity: 2, subTotal: 10.0 },
-        { product: { name: 'Tiramisu' }, quantity: 1, subTotal: 25.0 },
-      ],
-    },
-    {
-      id: 3,
-      customer: 'Carlos Pereira',
-      tableNumber: 8,
-      creationDate: new Date().toISOString(),
-      orderStatus: 'PENDING',
-      totalValue: 60.0,
-      items: [
-        { product: { name: 'Hambúrguer' }, quantity: 1, subTotal: 25.0 },
-        { product: { name: 'Batata Frita' }, quantity: 1, subTotal: 15.0 },
-        { product: { name: 'Cerveja' }, quantity: 2, subTotal: 20.0 },
-      ],
-    },
-    {
-      id: 4,
-      customer: 'Ana Costa',
-      tableNumber: 10,
-      creationDate: new Date().toISOString(),
-      orderStatus: 'CONCLUDED',
-      totalValue: 200.0,
-      items: [
-        { product: { name: 'Sushi Combo' }, quantity: 2, subTotal: 180.0 },
-        { product: { name: 'Chá Verde' }, quantity: 2, subTotal: 20.0 },
-      ],
-    },
-  ]);
-  const [filter, setFilter] = useState('');
+  const [orders, setOrders] = useState([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [newOrder, setNewOrder] = useState({
-    customer: '',
-    tableNumber: '',
-    items: [],
-  });
-  const [products] = useState([
-    { id: 1, name: 'Produto A', price: 40.0 },
-    { id: 2, name: 'Produto B', price: 25.0 },
-    { id: 3, name: 'Produto C', price: 15.5 },
-  ]);
-  const [selectedProductId, setSelectedProductId] = useState(null);
-  const [quantity, setQuantity] = useState('');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [dropdownItems, setDropdownItems] = useState(
-    products.map((product) => ({ label: product.name, value: product.id }))
-  );
-  const [isConcludedFilter, setIsConcludedFilter] = useState(false); // Estado para alternar entre PENDING e CONCLUDED
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [isConcludedFilter, setIsConcludedFilter] = useState(false);
+  const [viewingOrder, setViewingOrder] = useState(null);
 
-  // Filtrar pedidos com base no status selecionado
   const filteredOrders = orders.filter(
-    (order) =>
-      order.orderStatus === (isConcludedFilter ? 'CONCLUDED' : 'PENDING') &&
-      (order.customer.toLowerCase().includes(filter.toLowerCase()) ||
-        order.tableNumber.toString().includes(filter))
+    (order) => order.orderStatus === (isConcludedFilter ? "CONCLUDED" : "PENDING")
   );
 
-  const handleAddOrder = () => {
-    if (!newOrder.customer || !newOrder.tableNumber || newOrder.items.length === 0) {
-      Alert.alert('Erro', 'Preencha todos os campos e adicione ao menos um item.');
-      return;
-    }
-
-    const id = orders.length + 1;
-    const totalValue = newOrder.items.reduce((acc, item) => acc + item.subTotal, 0);
-
-    const orderToAdd = {
-      ...newOrder,
-      id,
-      creationDate: new Date().toISOString(),
-      orderStatus: 'PENDING',
-      totalValue,
-    };
-
-    setOrders([...orders, orderToAdd]);
-    setIsModalVisible(false);
-    setNewOrder({ customer: '', tableNumber: '', items: [] });
+  const handleOpenNew = () => {
+    setEditingOrder(null);
+    setIsModalVisible(true);
   };
-  
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <Text style={styles.customer}>Cliente: {item.customer}</Text>
-      <Text style={styles.tableNumber}>Mesa: {item.tableNumber}</Text>
-      <Text style={styles.date}>
-        Data: {new Date(item.creationDate).toLocaleString()}
-      </Text>
-      <Text style={styles.status}>Status: {item.orderStatus}</Text>
-      <Text style={styles.totalValue}>
-        Total: R$ {item.totalValue.toFixed(2)}
-      </Text>
-      <Text style={styles.itemsTitle}>Itens:</Text>
-      {item.items.map((orderItem, idx) => (
-        <Text style={styles.item} key={idx}>
-          - {orderItem.product.name} (x{orderItem.quantity}) - R${' '}
-          {orderItem.subTotal.toFixed(2)}
-        </Text>
-      ))}
-      {!isConcludedFilter && 
-      <View style={styles.cardButtons}>
-        <TouchableOpacity style={styles.concludeButton} onPress={() => handleConcludeOrder(item.id)}>
-          <Text style={styles.buttonText}>Concluir</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.editButton} onPress={() => handleEditOrder(item)}>
-          <Text style={styles.buttonText}>Editar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteOrder(item.id)}>
-          <Text style={styles.buttonText}>Excluir</Text>
-        </TouchableOpacity>
-      </View>}
-    </View>
-  );
+
+  const handleOpenEdit = (order) => {
+    setEditingOrder(order);
+    setIsModalVisible(true);
+  };
+
+  const handleSaveOrder = (order) => {
+    if (order.id) {
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
+    } else {
+      const id = orders.length > 0 ? Math.max(...orders.map((o) => o.id)) + 1 : 1;
+      const newOrder = {
+        ...order,
+        id,
+        creationDate: new Date().toISOString(),
+        orderStatus: "PENDING",
+      };
+      setOrders((prev) => [...prev, newOrder]);
+    }
+    setIsModalVisible(false);
+    setEditingOrder(null);
+  };
 
   const handleConcludeOrder = (orderId) => {
-    Alert.alert(
-      'Confirmar finalizaçao',
-      'Tem certeza que deseja concluir este pedido?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Concluir',
-          style: 'destructive',
-          onPress: () => {
-          },
-        },
-      ]
-    );
-  }
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
 
-  const handleEditOrder = (order) => {
-    setNewOrder(order); // Preenche os dados do pedido no formulário.
-    setIsModalVisible(true); // Abre o modal para edição.
-  };
-
-  const handleDeleteOrder = (orderId) => {
     Alert.alert(
-      'Confirmar Exclusão',
-      'Tem certeza que deseja excluir este pedido?',
+      "Confirmar conclusão",
+      `Deseja marcar o pedido #${orderId} como concluído?`,
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: "Cancelar", style: "cancel" },
         {
-          text: 'Excluir',
-          style: 'destructive',
+          text: "Confirmar",
           onPress: () => {
-            setOrders((prevOrders) =>
-              prevOrders.filter((order) => order.id !== orderId)
+            setOrders((prev) =>
+              prev.map((o) =>
+                o.id === orderId ? { ...o, orderStatus: "CONCLUDED", concludedDate: new Date().toISOString() } : o
+              )
             );
           },
         },
-      ]
+      ],
+      { cancelable: true }
     );
   };
-  
-  const handleAddProductToOrder = () => {
-    if (!selectedProductId || !quantity) {
-      Alert.alert('Erro', 'Selecione um produto e insira a quantidade.');
-      return;
+
+  const handleCancelOrder = (orderId) => {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) return;
+
+    Alert.alert(
+      "Confirmar cancelamento",
+      `Deseja cancelar o pedido #${orderId}? Esta ação marcará o pedido como "CANCELED".`,
+      [
+        { text: "Manter", style: "cancel" },
+        {
+          text: "Cancelar pedido",
+          onPress: () => {
+            setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, orderStatus: "CANCELED", canceledDate: new Date().toISOString() } : o)));
+          },
+          style: "destructive",
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const handleViewOrder = (order) => {
+    setViewingOrder(order);
+  };
+
+  const closeViewModal = () => setViewingOrder(null);
+
+  const computeOrderTotal = (order) => {
+    if (!order) return 0;
+    if (typeof order.totalValue === "number") return order.totalValue;
+    if (Array.isArray(order.items)) {
+      return order.items.reduce((acc, it) => acc + Number(it.subTotal ?? (it.product?.price ?? 0) * (it.quantity ?? 0)), 0);
     }
-  
-    const product = products.find((p) => p.id === selectedProductId);
-    const subTotal = product.price * parseInt(quantity);
-  
-    setNewOrder((prev) => {
-      const updatedItems = [...prev.items, { product, quantity: parseInt(quantity), subTotal }];
-      const totalValue = updatedItems.reduce((acc, item) => acc + item.subTotal, 0);
-  
-      return {
-        ...prev,
-        items: updatedItems,
-        totalValue,
-      };
-    });
-    setSelectedProductId(null);
-    setQuantity('');
+    return 0;
   };
-  
-  const handleRemoveItem = (index) => {
-    setNewOrder((prev) => {
-      const updatedItems = prev.items.filter((_, i) => i !== index);
-      const totalValue = updatedItems.reduce((acc, item) => acc + item.subTotal, 0);
-  
-      return {
-        ...prev,
-        items: updatedItems,
-        totalValue,
-      };
-    });
+
+  const renderItem = ({ item }) => {
+    const displayTotal = computeOrderTotal(item);
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardLeft}>
+            <Text style={styles.customer}>Cliente: {item.customer}</Text>
+            <Text style={styles.tableNumber}>Mesa: {item.tableNumber}</Text>
+            <Text style={styles.date}>{new Date(item.creationDate).toLocaleString()}</Text>
+            {item.observations ? (
+              <Text style={styles.obsPreview}>{truncate(item.observations, 80)}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.statusWrap}>
+            <Text style={[styles.status, item.orderStatus === "CONCLUDED" && { color: THEME.success }]}>
+              {item.orderStatus}
+            </Text>
+            <Text style={styles.totalValue}>R$ {Number(displayTotal ?? 0).toFixed(2)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.iconButton} onPress={() => handleViewOrder(item)}>
+            <Ionicons name="eye" size={18} color={THEME.muted} />
+            <Text style={styles.iconLabel}>Visualizar</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconButton} onPress={() => handleOpenEdit(item)}>
+            <Ionicons name="create-outline" size={18} color={THEME.primary} />
+            <Text style={[styles.iconLabel, { color: THEME.primary }]}>Editar</Text>
+          </TouchableOpacity>
+
+          {item.orderStatus !== "CONCLUDED" && item.orderStatus !== "CANCELED" && (
+            <>
+              <TouchableOpacity style={styles.iconButton} onPress={() => handleConcludeOrder(item.id)}>
+                <Ionicons name="checkmark-done-outline" size={18} color={THEME.success} />
+                <Text style={[styles.iconLabel, { color: THEME.success }]}>Concluir</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.iconButton} onPress={() => handleCancelOrder(item.id)}>
+                <Ionicons name="close-circle-outline" size={18} color={THEME.danger} />
+                <Text style={[styles.iconLabel, { color: THEME.danger }]}>Cancelar</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    );
   };
-  
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: THEME.background }]}>
       <Text style={styles.title}>Pedidos</Text>
 
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Filtrar por cliente ou mesa"
-        value={filter}
-        onChangeText={setFilter}
-      />
-
       <View style={styles.switchContainer}>
-        <Text style={styles.switchLabel}>
-          Exibindo: {isConcludedFilter ? 'Concluídos' : 'Pendentes'}
-        </Text>
+        <Text style={styles.switchLabel}>Exibindo: {isConcludedFilter ? "Concluídos" : "Pendentes"}</Text>
         <Switch
           value={isConcludedFilter}
           onValueChange={setIsConcludedFilter}
-          thumbColor={isConcludedFilter ? '#FFA500' : '#008CBA'}
-          trackColor={{ false: '#ccc', true: '#ddd' }}
+          thumbColor={isConcludedFilter ? THEME.primary : THEME.primary}
+          trackColor={{ false: THEME.border, true: "#ddd" }}
         />
       </View>
 
@@ -253,346 +205,142 @@ const OrdersScreen = () => {
         data={filteredOrders}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContainer}
         ListEmptyComponent={<Text style={styles.emptyText}>Nenhum pedido encontrado</Text>}
+        contentContainerStyle={{ paddingBottom: 120 }}
       />
 
-      <Modal visible={isModalVisible} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <ScrollView contentContainerStyle={styles.modalScrollContent}>
-              <Text style={styles.modalTitle}>Novo Pedido</Text>
+      <OrderModal
+        isVisible={isModalVisible}
+        onClose={() => {
+          setIsModalVisible(false);
+          setEditingOrder(null);
+        }}
+        onSave={handleSaveOrder}
+        initialOrder={editingOrder}
+        products={productsList}
+      />
 
-              <TextInput
-                style={styles.input}
-                placeholder="Nome do Cliente"
-                value={newOrder.customer}
-                onChangeText={(text) =>
-                  setNewOrder((prev) => ({ ...prev, customer: text }))
-                }
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Número da Mesa"
-                keyboardType="numeric"
-                value={newOrder.tableNumber}
-                onChangeText={(text) =>
-                  setNewOrder((prev) => ({ ...prev, tableNumber: text }))
-                }
-              />
+      <TouchableOpacity style={[styles.floatingButton, { backgroundColor: THEME.primary }]} onPress={handleOpenNew}>
+        <Text style={styles.floatingButtonText}>+</Text>
+      </TouchableOpacity>
 
-              <Text style={styles.itemsTitle}>Adicionar Produto</Text>
-              <DropDownPicker
-                open={dropdownOpen}
-                value={selectedProductId}
-                items={dropdownItems}
-                setOpen={setDropdownOpen}
-                setValue={setSelectedProductId}
-                setItems={setDropdownItems}
-                placeholder="Selecione um produto"
-                style={styles.dropdown}
-                dropDownContainerStyle={styles.dropdownContainer}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Quantidade"
-                keyboardType="numeric"
-                value={quantity}
-                onChangeText={setQuantity}
-              />
-
-              <TouchableOpacity style={styles.addProductButton} onPress={handleAddProductToOrder}>
-                <Text style={styles.addProductButtonText}>Adicionar Produto</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.itemsTitle}>Itens do Pedido</Text>
-              {newOrder.items.map((item, index) => (
-                <View key={index} style={styles.itemRow}>
-                  <Text style={styles.item}>
-                    {item.product.name} (x{item.quantity}) - R$ {item.subTotal.toFixed(2)}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => handleRemoveItem(index)}
-                    style={styles.removeButton}
-                  >
-                    <Text style={styles.removeButtonText}>Remover</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-
-              <Text style={styles.totalLabel}>
-                Valor Total: R$ {newOrder.items.reduce((acc, item) => acc + item.subTotal, 0).toFixed(2)}
-              </Text>
-            </ScrollView>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.button} onPress={handleAddOrder}>
-                <Text style={styles.buttonText}>Salvar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={() => setIsModalVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancelar</Text>
+      <Modal visible={!!viewingOrder} animationType="slide" transparent>
+        <View style={styles.viewModalOverlay}>
+          <View style={[styles.viewModal, { backgroundColor: THEME.card }]}>
+            <View style={styles.viewModalHeader}>
+              <Text style={styles.viewModalTitle}>Pedido #{viewingOrder?.id}</Text>
+              <TouchableOpacity onPress={closeViewModal}>
+                <Ionicons name="close" size={22} color={THEME.muted} />
               </TouchableOpacity>
             </View>
+
+            <ScrollView style={{ marginTop: 8 }}>
+              <Text style={{ fontWeight: "600", marginBottom: 6 }}>Cliente: {viewingOrder?.customer}</Text>
+              <Text style={{ marginBottom: 6 }}>Mesa: {viewingOrder?.tableNumber}</Text>
+              <Text style={{ marginBottom: 12 }}>Status: {viewingOrder?.orderStatus}</Text>
+
+              <Text style={{ fontWeight: "600", marginBottom: 6 }}>Itens:</Text>
+              {viewingOrder?.items?.map((it, idx) => {
+                const itSub = Number(it.subTotal ?? (it.product?.price ?? 0) * (it.quantity ?? 0));
+                return (
+                  <View key={idx} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+                    <Text>{it.product?.name ?? "Produto"} x{it.quantity ?? 0}</Text>
+                    <Text>R$ {itSub.toFixed(2)}</Text>
+                  </View>
+                );
+              })}
+
+              <Text style={{ fontWeight: "700", marginTop: 12 }}>
+                Total: R$ {Number(computeOrderTotal(viewingOrder) ?? 0).toFixed(2)}
+              </Text>
+
+              {/* Exibição das observações */}
+              {viewingOrder?.observations ? (
+                <>
+                  <Text style={{ fontWeight: "600", marginTop: 12 }}>Observações:</Text>
+                  <Text style={{ color: THEME.muted, marginTop: 6 }}>{viewingOrder.observations}</Text>
+                </>
+              ) : null}
+            </ScrollView>
           </View>
         </View>
       </Modal>
-
-      {/* Botão Flutuante */}
-      <TouchableOpacity
-        style={styles.floatingButton}
-        onPress={() => setIsModalVisible(true)}
-      >
-        <Text style={styles.floatingButtonText}>+</Text>
-      </TouchableOpacity>
     </View>
   );
 };
 
+export default OrdersScreen;
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginVertical: 20,
-  },
-  searchInput: {
-    backgroundColor: '#fff',
-    padding: 10,
-    borderRadius: 8,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  listContainer: {
-    paddingHorizontal: 20,
-  },
+  container: { flex: 1 },
+  title: { fontSize: 24, fontWeight: "700", textAlign: "center", margin: 20, color: "#111827" },
   card: {
-    backgroundColor: '#fff',
-    padding: 15,
+    backgroundColor: THEME.card,
+    padding: 12,
     borderRadius: 8,
-    marginBottom: 10,
+    marginHorizontal: 10,
+    marginVertical: 6,
     borderWidth: 1,
-    borderColor: '#ccc',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    borderColor: THEME.border,
   },
-  customer: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  tableNumber: {
-    fontSize: 14,
-    color: '#666',
-  },
-  date: {
-    fontSize: 12,
-    color: '#999',
-  },
-  status: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginVertical: 5,
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#28a745',
+  cardHeader: { flexDirection: "row", justifyContent: "space-between" },
+  cardLeft: { flex: 1 },
+  customer: { fontSize: 16, fontWeight: "700", color: "#111827" },
+  tableNumber: { fontSize: 14, color: THEME.muted },
+  date: { fontSize: 12, color: "#9ca3af" },
+  obsPreview: { marginTop: 6, color: THEME.muted, fontSize: 13 },
+  statusWrap: { alignItems: "flex-end" },
+  status: { fontSize: 14, fontWeight: "700", marginVertical: 5, color: THEME.muted },
+  totalValue: { fontSize: 16, fontWeight: "700", color: THEME.success },
+  emptyText: { textAlign: "center", color: "#9ca3af", marginTop: 20 },
+  switchContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
     marginBottom: 10,
+    alignItems: "center",
   },
-  itemsTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 10,
-  },
-  item: {
-    fontSize: 14,
-    color: '#333',
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#999',
-    marginTop: 20,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    width: '90%',
-    height: '70%',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 20,
-  },
-  modalScrollContent: {
-    paddingBottom: 20,
-  },  
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
-  },
-  dropdown: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  dropdownContainer: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-  },
-  addProductButton: {
-    backgroundColor: '#007bff',
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  addProductButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  removeButton: {
-    backgroundColor: '#dc3545',
-    padding: 5,
-    borderRadius: 8,
-  },
-  removeButtonText: {
-    color: '#fff',
-    fontSize: 12,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  button: {
-    flex: 1,
-    backgroundColor: '#007bff',
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginHorizontal: 5,
-  },
-  cancelButton: {
-    backgroundColor: '#6c757d',
-  },
+  switchLabel: { fontSize: 16, fontWeight: "700", color: "#111827" },
   floatingButton: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 20,
     right: 20,
-    backgroundColor: '#007bff',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
     elevation: 4,
   },
-  floatingButtonText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  totalLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginVertical: 10,
-    textAlign: 'center',
-    color: '#333',
-  },
-  cardButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 10,
-    gap: 10,
-  },
-  concludeButton: {
-    backgroundColor: '#28a745',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-  },
-  editButton: {
-    backgroundColor: '#007bff',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-  },
-  deleteButton: {
-    backgroundColor: '#F44336',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  statusButton: {
-    padding: 10,
-    borderRadius: 5,
-    marginRight: 10,
-  },
-  statusButtonPending: {
-    backgroundColor: '#28a745', // Verde para "Iniciar"
-  },
-  statusButtonDoing: {
-    backgroundColor: '#FFA500', // Laranja para "FAZENDO"
-  },
-  statusButtonCompleted: {
-    backgroundColor: '#6c757d', // Cinza para "CONCLUÍDO"
-  },
-  statusButtonText: {
-    color: '#fff', // Branco para contraste
-    fontWeight: 'bold', // Texto em negrito para destaque
-    textAlign: 'center', // Centraliza o texto dentro do botão
-    fontSize: 14, // Tamanho de texto padrão
-  },
-  switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 10,
-  },
-  switchLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-});
+  floatingButtonText: { color: "#fff", fontSize: 28, fontWeight: "700" },
 
-export default OrdersScreen;
+  actionsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    marginTop: 10,
+  },
+  iconButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  iconLabel: {
+    marginLeft: 6,
+    fontSize: 13,
+    color: "#374151",
+  },
+
+  viewModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    justifyContent: "center",
+    padding: 16,
+  },
+  viewModal: {
+    borderRadius: 10,
+    padding: 16,
+    maxHeight: "80%",
+  },
+  viewModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  viewModalTitle: { fontSize: 18, fontWeight: "700", color: "#111827" },
+});

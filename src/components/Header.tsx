@@ -3,9 +3,13 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import colors from '../styles/colors'; // Importa as cores globais
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';  // Usando MaterialCommunityIcons
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types/navigation';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 const Header = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
 
   const handleLogout = () => {
@@ -22,17 +26,16 @@ const Header = () => {
     navigation.navigate('Home'); // Redireciona para a tela "Home"
   };
   
-  return (
-    !isLoginScreen && 
+  return !isLoginScreen ? (
     <View style={[styles.header, { backgroundColor: colors.primary }]}>
-        <TouchableOpacity onPress={handleNavigateHome}>
-            <Text style={styles.title}>Serviço de Pedidos</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleLogout}>
-            <Icon name="logout" size={30} color="#fff" /> {/* Usando o ícone logout */}
-        </TouchableOpacity>    
+      <TouchableOpacity onPress={handleNavigateHome}>
+        <Text style={styles.title}>Serviço de Pedidos</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={handleLogout}>
+        <Icon name="logout" size={30} color="#fff" />
+      </TouchableOpacity>    
     </View>
-  );
+  ) : null;
 };
 
 const styles = StyleSheet.create({
