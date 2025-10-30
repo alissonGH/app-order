@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from "react";
 import DropDownPicker from "react-native-dropdown-picker";
 import { THEME } from "../styles/theme";
+import { Product } from "../types/models";
 
-const ProductDropdown = ({ products, selectedProduct, onSelect }) => {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState(selectedProduct ? selectedProduct.id : null);
-  const [items, setItems] = useState([]);
+interface Props {
+  products: Product[];
+  selectedProduct?: Product | null;
+  onSelect: (p: Product | null) => void;
+}
+
+const ProductDropdown: React.FC<Props> = ({ products, selectedProduct, onSelect }) => {
+  const [open, setOpen] = useState<boolean>(false);
+  const [value, setValue] = useState<number | null>(selectedProduct ? (selectedProduct.id ?? null) : null);
+  const [items, setItems] = useState<any[]>([]);
 
   useEffect(() => {
     setItems(

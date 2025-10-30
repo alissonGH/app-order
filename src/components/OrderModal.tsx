@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Product, OrderItem, Order } from "../types/models";
 import {
   Modal,
   View,
@@ -22,17 +23,26 @@ import { THEME } from "../styles/theme";
  * - observations carregado de initialOrder, incluído no snapshot e enviado em onSave
  */
 
-const MAX_OBSERVATIONS = 1000;
+const MAX_OBSERVATIONS = 500;
 
-const OrderModal = ({ isVisible, onClose, onSave, initialOrder = null, products = [] }) => {
-  const [customer, setCustomer] = useState("");
-  const [tableNumber, setTableNumber] = useState("");
-  const [items, setItems] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [quantity, setQuantity] = useState("");
-  const [observations, setObservations] = useState(""); // novo campo
+interface OrderModalProps {
+  isVisible: boolean;
+  onClose: () => void;
+  onSave: (order: Order) => void;
+  initialOrder?: Order | null;
+  products?: Product[];
+}
 
-  const originalSnapshot = useRef(null);
+const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, initialOrder = null, products = [] }) => {
+  const [customer, setCustomer] = useState<string>("");
+  const [tableNumber, setTableNumber] = useState<string>("");
+  const [items, setItems] = useState<OrderItem[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [quantity, setQuantity] = useState<string>("");
+  const [observations, setObservations] = useState<string>(""); // novo campo
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+
+  const originalSnapshot = useRef<any>(null);
 
   useEffect(() => {
     if (isVisible) {
@@ -41,7 +51,8 @@ const OrderModal = ({ isVisible, onClose, onSave, initialOrder = null, products 
         setTableNumber(String(initialOrder.tableNumber || ""));
         setObservations(initialOrder.observations ?? ""); // carregar observations
         // normalize items: garantir quantity e subTotal
-        const normalized = (initialOrder.items || []).map((it) => {
+        const rawItems = (initialOrder.items || []) as any[];
+        const normalized = rawItems.map((it: any) => {
           const qty = Number(it.quantity ?? it.qty ?? 0);
           const price = Number(it.product?.price ?? 0);
           const subTotal = Number(it.subTotal ?? price * qty);
@@ -50,7 +61,7 @@ const OrderModal = ({ isVisible, onClose, onSave, initialOrder = null, products 
             quantity: qty,
             subTotal,
             product: it.product ?? { id: it.product?.id ?? null, name: it.product?.name ?? "Produto", price },
-          };
+          } as OrderItem;
         });
         setItems(normalized);
       } else {
@@ -68,6 +79,22 @@ const OrderModal = ({ isVisible, onClose, onSave, initialOrder = null, products 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialOrder, isVisible]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const onShow = (e: any) => setKeyboardHeight(e.endCoordinates?.height || 0);
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const takeSnapshot = () => ({
     customer: customer || "",
@@ -159,38 +186,38 @@ const OrderModal = ({ isVisible, onClose, onSave, initialOrder = null, products 
     setQuantity("");
   };
 
-  const handleRemoveItem = (index) => {
+  const handleRemoveItem = (index: number) => {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const incrementQuantity = (index) => {
+  const incrementQuantity = (index: number) => {
     setItems((prev) =>
       prev.map((it, i) =>
         i === index
-          ? {
+          ? ({
               ...it,
               quantity: it.quantity + 1,
               subTotal: (it.quantity + 1) * (it.product?.price ?? 0),
-            }
+            } as OrderItem)
           : it
       )
     );
   };
 
-  const decrementQuantity = (index) => {
+  const decrementQuantity = (index: number) => {
     setItems((prev) =>
       prev
         .map((it, i) => {
           if (i !== index) return it;
           const newQty = it.quantity - 1;
           if (newQty <= 0) return null;
-          return {
+          return ({
             ...it,
             quantity: newQty,
             subTotal: newQty * (it.product?.price ?? 0),
-          };
+          } as OrderItem);
         })
-        .filter(Boolean)
+        .filter((x): x is OrderItem => x != null)
     );
   };
 
@@ -248,7 +275,7 @@ const OrderModal = ({ isVisible, onClose, onSave, initialOrder = null, products 
           </TouchableOpacity>
 
           <ScrollView contentContainerStyle={styles.scroll}>
-            <Text style={[styles.title, { color: THEME.muted }]}>{initialOrder ? "Editar Pedido" : "Novo Pedido"}</Text>
+            <Text style={styles.title}>{initialOrder ? "Editar Pedido" : "Novo Pedido"}</Text>
 
             <TextInput
               style={[styles.input, { borderColor: THEME.border, backgroundColor: THEME.card }]}

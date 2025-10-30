@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,15 +9,16 @@ import {
   Modal,
   ScrollView,
   Alert,
+  TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import OrderModal from "../components/OrderModal";
 import { THEME } from "../styles/theme";
 
 /**
- * OrdersScreen atualizado para:
- * - exibir preview das observações (resumo) no card (limitado a 80 chars)
- * - manter demais funcionalidades e confirmações
+ * OrdersScreen atualizado:
+ * - campo de filtro para buscar por nome do cliente ou número da mesa
+ * - mantém confirmações de concluir/cancelar e visualização/edição
  */
 
 const productsList = [
@@ -33,38 +34,54 @@ const productsList = [
   { id: 10, name: "Produto J", price: 18.0 },
 ];
 
-const truncate = (str, n) => {
+import { Product, OrderItem, Order } from "../types/models";
+
+const truncate = (str: string | undefined, n: number) => {
   if (!str) return "";
   return str.length > n ? str.slice(0, n).trimEnd() + "…" : str;
 };
 
-const OrdersScreen = () => {
-  const [orders, setOrders] = useState([]);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [isConcludedFilter, setIsConcludedFilter] = useState(false);
-  const [viewingOrder, setViewingOrder] = useState(null);
+const OrdersScreen: React.FC = () => {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [isConcludedFilter, setIsConcludedFilter] = useState<boolean>(false);
+  const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
 
-  const filteredOrders = orders.filter(
-    (order) => order.orderStatus === (isConcludedFilter ? "CONCLUDED" : "PENDING")
-  );
+  // novo estado para filtro por cliente/mesa
+  const [filterText, setFilterText] = useState<string>("");
+
+  // Filtra por status (PENDING/CONCLUDED) e por texto (cliente ou mesa)
+  const filteredOrders = useMemo(() => {
+    const status = isConcludedFilter ? "CONCLUDED" : "PENDING";
+    const q = (filterText || "").toString().trim().toLowerCase();
+
+    return orders
+      .filter((order) => order.orderStatus === status)
+      .filter((order) => {
+        if (!q) return true;
+        const customer = (order.customer || "").toString().toLowerCase();
+        const table = (order.tableNumber || "").toString().toLowerCase();
+        return customer.includes(q) || table.includes(q);
+      });
+  }, [orders, isConcludedFilter, filterText]);
 
   const handleOpenNew = () => {
     setEditingOrder(null);
     setIsModalVisible(true);
   };
 
-  const handleOpenEdit = (order) => {
+  const handleOpenEdit = (order: Order) => {
     setEditingOrder(order);
     setIsModalVisible(true);
   };
 
-  const handleSaveOrder = (order) => {
+  const handleSaveOrder = (order: Order) => {
     if (order.id) {
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
     } else {
-      const id = orders.length > 0 ? Math.max(...orders.map((o) => o.id)) + 1 : 1;
-      const newOrder = {
+      const id = orders.length > 0 ? Math.max(...orders.map((o) => o.id ?? 0)) + 1 : 1;
+      const newOrder: Order = {
         ...order,
         id,
         creationDate: new Date().toISOString(),
@@ -76,7 +93,7 @@ const OrdersScreen = () => {
     setEditingOrder(null);
   };
 
-  const handleConcludeOrder = (orderId) => {
+  const handleConcludeOrder = (orderId: number) => {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
 
@@ -100,7 +117,7 @@ const OrdersScreen = () => {
     );
   };
 
-  const handleCancelOrder = (orderId) => {
+  const handleCancelOrder = (orderId: number) => {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return;
 
@@ -121,13 +138,13 @@ const OrdersScreen = () => {
     );
   };
 
-  const handleViewOrder = (order) => {
+  const handleViewOrder = (order: Order) => {
     setViewingOrder(order);
   };
 
   const closeViewModal = () => setViewingOrder(null);
 
-  const computeOrderTotal = (order) => {
+  const computeOrderTotal = (order?: Order | null) => {
     if (!order) return 0;
     if (typeof order.totalValue === "number") return order.totalValue;
     if (Array.isArray(order.items)) {
@@ -136,7 +153,7 @@ const OrdersScreen = () => {
     return 0;
   };
 
-  const renderItem = ({ item }) => {
+  const renderItem = ({ item }: { item: Order }) => {
     const displayTotal = computeOrderTotal(item);
     return (
       <View style={styles.card}>
@@ -144,16 +161,12 @@ const OrdersScreen = () => {
           <View style={styles.cardLeft}>
             <Text style={styles.customer}>Cliente: {item.customer}</Text>
             <Text style={styles.tableNumber}>Mesa: {item.tableNumber}</Text>
-            <Text style={styles.date}>{new Date(item.creationDate).toLocaleString()}</Text>
-            {item.observations ? (
-              <Text style={styles.obsPreview}>{truncate(item.observations, 80)}</Text>
-            ) : null}
+            <Text style={styles.date}>{item.creationDate ? new Date(item.creationDate).toLocaleString() : ''}</Text>
+            {item.observations ? <Text style={styles.obsPreview}>{truncate(item.observations, 80)}</Text> : null}
           </View>
 
           <View style={styles.statusWrap}>
-            <Text style={[styles.status, item.orderStatus === "CONCLUDED" && { color: THEME.success }]}>
-              {item.orderStatus}
-            </Text>
+            <Text style={[styles.status, item.orderStatus === "CONCLUDED" && { color: THEME.success }]}>{translateStatus(item.orderStatus)}</Text>
             <Text style={styles.totalValue}>R$ {Number(displayTotal ?? 0).toFixed(2)}</Text>
           </View>
         </View>
@@ -171,12 +184,12 @@ const OrdersScreen = () => {
 
           {item.orderStatus !== "CONCLUDED" && item.orderStatus !== "CANCELED" && (
             <>
-              <TouchableOpacity style={styles.iconButton} onPress={() => handleConcludeOrder(item.id)}>
+              <TouchableOpacity style={styles.iconButton} onPress={() => item.id != null && handleConcludeOrder(item.id)}>
                 <Ionicons name="checkmark-done-outline" size={18} color={THEME.success} />
                 <Text style={[styles.iconLabel, { color: THEME.success }]}>Concluir</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.iconButton} onPress={() => handleCancelOrder(item.id)}>
+              <TouchableOpacity style={styles.iconButton} onPress={() => item.id != null && handleCancelOrder(item.id)}>
                 <Ionicons name="close-circle-outline" size={18} color={THEME.danger} />
                 <Text style={[styles.iconLabel, { color: THEME.danger }]}>Cancelar</Text>
               </TouchableOpacity>
@@ -191,6 +204,25 @@ const OrdersScreen = () => {
     <View style={[styles.container, { backgroundColor: THEME.background }]}>
       <Text style={styles.title}>Pedidos</Text>
 
+      {/* Campo de busca por cliente ou mesa */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search" size={18} color={THEME.muted} style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Buscar por cliente ou mesa..."
+            placeholderTextColor="#9ca3af"
+            value={filterText}
+            onChangeText={setFilterText}
+            style={styles.searchInput}
+          />
+          {filterText.length > 0 && (
+            <TouchableOpacity onPress={() => setFilterText("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={18} color={THEME.muted} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       <View style={styles.switchContainer}>
         <Text style={styles.switchLabel}>Exibindo: {isConcludedFilter ? "Concluídos" : "Pendentes"}</Text>
         <Switch
@@ -203,7 +235,7 @@ const OrdersScreen = () => {
 
       <FlatList
         data={filteredOrders}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => (item.id ?? 0).toString()}
         renderItem={renderItem}
         ListEmptyComponent={<Text style={styles.emptyText}>Nenhum pedido encontrado</Text>}
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -237,7 +269,7 @@ const OrdersScreen = () => {
             <ScrollView style={{ marginTop: 8 }}>
               <Text style={{ fontWeight: "600", marginBottom: 6 }}>Cliente: {viewingOrder?.customer}</Text>
               <Text style={{ marginBottom: 6 }}>Mesa: {viewingOrder?.tableNumber}</Text>
-              <Text style={{ marginBottom: 12 }}>Status: {viewingOrder?.orderStatus}</Text>
+              <Text style={{ marginBottom: 12 }}>Status: {translateStatus(viewingOrder?.orderStatus)}</Text>
 
               <Text style={{ fontWeight: "600", marginBottom: 6 }}>Itens:</Text>
               {viewingOrder?.items?.map((it, idx) => {
@@ -269,11 +301,46 @@ const OrdersScreen = () => {
   );
 };
 
+const translateStatus = (s?: string | null) => {
+  if (!s) return "";
+  switch (s) {
+    case "CONCLUDED":
+      return "Concluído";
+    case "PENDING":
+      return "Pendente";
+    case "CANCELED":
+      return "Cancelado";
+    default:
+      return s;
+  }
+};
+
 export default OrdersScreen;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   title: { fontSize: 24, fontWeight: "700", textAlign: "center", margin: 20, color: "#111827" },
+  /* busca */
+  searchRow: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  searchInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: THEME.card,
+    borderColor: THEME.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+  },
+
   card: {
     backgroundColor: THEME.card,
     padding: 12,

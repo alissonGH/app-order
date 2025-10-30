@@ -1,5 +1,6 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { createStackNavigator } from "@react-navigation/stack";
 import LoginScreen from "./src/screens/LoginScreen";
 import HomeScreen from "./src/screens/HomeScreen";
@@ -15,7 +16,8 @@ const Stack = createStackNavigator<RootStackParamList>();
 export default function App() {
   return (
     <Provider store={store}>
-      <NavigationContainer>
+      <SafeAreaProvider>
+        <NavigationContainer>
         <Stack.Navigator
           screenOptions={{
             header: () => <Header />,
@@ -27,7 +29,8 @@ export default function App() {
           <Stack.Screen name="Orders" component={OrderScreen} />
           <Stack.Screen name="Products" component={ProductScreen} />
         </Stack.Navigator>
-      </NavigationContainer>
+        </NavigationContainer>
+      </SafeAreaProvider>
     </Provider>
   );
 }

@@ -1,5 +1,5 @@
 const colors = {
-    primary: '#663399', // Cor do botão de login e do cabeçalho
+    primary: '#ed5924ff', // Cor do botão de login e do cabeçalho
     textLight: '#ffffff', // Cor do texto claro
     textDark: '#000000', // Cor do texto escuro
     background: '#f5f5f5',
