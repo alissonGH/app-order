@@ -13,14 +13,26 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Necessário para conectar a impressoras térmicas via Bluetooth.",
+        "NSBluetoothPeripheralUsageDescription": "Necessário para comunicar com dispositivos Bluetooth.",
+        "NSLocationWhenInUseUsageDescription": "Necessário para descoberta de dispositivos Bluetooth no Android/iOS em algumas versões."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.alissonf27.apporder"
+      "package": "com.alissonf27.apporder",
+      "permissions": [
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

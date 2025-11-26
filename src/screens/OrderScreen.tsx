@@ -6,20 +6,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   Switch,
-  Modal,
-  ScrollView,
   Alert,
   TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import OrderModal from "../components/OrderModal";
+import printOrder from "../utils/printer";
 import { THEME } from "../styles/theme";
-
-/**
- * OrdersScreen atualizado:
- * - campo de filtro para buscar por nome do cliente ou número da mesa
- * - mantém confirmações de concluir/cancelar e visualização/edição
- */
 
 const productsList = [
   { id: 1, name: "Produto A", price: 40.0 },
@@ -34,7 +27,7 @@ const productsList = [
   { id: 10, name: "Produto J", price: 18.0 },
 ];
 
-import { Product, OrderItem, Order } from "../types/models";
+import { Order } from "../types/models";
 
 const truncate = (str: string | undefined, n: number) => {
   if (!str) return "";
@@ -46,7 +39,6 @@ const OrdersScreen: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [isConcludedFilter, setIsConcludedFilter] = useState<boolean>(false);
-  const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
 
   // novo estado para filtro por cliente/mesa
   const [filterText, setFilterText] = useState<string>("");
@@ -138,11 +130,15 @@ const OrdersScreen: React.FC = () => {
     );
   };
 
-  const handleViewOrder = (order: Order) => {
-    setViewingOrder(order);
+  const handlePrintFromList = async (order: Order) => {
+    const res = await printOrder(order);
+    console.log("Resultado da impressão:", res);
+    if (res.success) {
+      Alert.alert("Impressão", "Pedido enviado para a impressora com sucesso.");
+    } else {
+      Alert.alert("Erro de Impressão", res.message || "Ocorreu um erro ao tentar imprimir o pedido.");
+    }
   };
-
-  const closeViewModal = () => setViewingOrder(null);
 
   const computeOrderTotal = (order?: Order | null) => {
     if (!order) return 0;
@@ -172,10 +168,10 @@ const OrdersScreen: React.FC = () => {
         </View>
 
         <View style={styles.actionsRow}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => handleViewOrder(item)}>
-            <Ionicons name="eye" size={18} color={THEME.muted} />
-            <Text style={styles.iconLabel}>Visualizar</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton} onPress={() => handlePrintFromList(item)}>
+              <Ionicons name="print" size={18} color={THEME.muted} />
+              <Text style={styles.iconLabel}>Imprimir</Text>
+            </TouchableOpacity>
 
           <TouchableOpacity style={styles.iconButton} onPress={() => handleOpenEdit(item)}>
             <Ionicons name="create-outline" size={18} color={THEME.primary} />
@@ -255,48 +251,7 @@ const OrdersScreen: React.FC = () => {
       <TouchableOpacity style={[styles.floatingButton, { backgroundColor: THEME.primary }]} onPress={handleOpenNew}>
         <Text style={styles.floatingButtonText}>+</Text>
       </TouchableOpacity>
-
-      <Modal visible={!!viewingOrder} animationType="slide" transparent>
-        <View style={styles.viewModalOverlay}>
-          <View style={[styles.viewModal, { backgroundColor: THEME.card }]}>
-            <View style={styles.viewModalHeader}>
-              <Text style={styles.viewModalTitle}>Pedido #{viewingOrder?.id}</Text>
-              <TouchableOpacity onPress={closeViewModal}>
-                <Ionicons name="close" size={22} color={THEME.muted} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ marginTop: 8 }}>
-              <Text style={{ fontWeight: "600", marginBottom: 6 }}>Cliente: {viewingOrder?.customer}</Text>
-              <Text style={{ marginBottom: 6 }}>Mesa: {viewingOrder?.tableNumber}</Text>
-              <Text style={{ marginBottom: 12 }}>Status: {translateStatus(viewingOrder?.orderStatus)}</Text>
-
-              <Text style={{ fontWeight: "600", marginBottom: 6 }}>Itens:</Text>
-              {viewingOrder?.items?.map((it, idx) => {
-                const itSub = Number(it.subTotal ?? (it.product?.price ?? 0) * (it.quantity ?? 0));
-                return (
-                  <View key={idx} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
-                    <Text>{it.product?.name ?? "Produto"} x{it.quantity ?? 0}</Text>
-                    <Text>R$ {itSub.toFixed(2)}</Text>
-                  </View>
-                );
-              })}
-
-              <Text style={{ fontWeight: "700", marginTop: 12 }}>
-                Total: R$ {Number(computeOrderTotal(viewingOrder) ?? 0).toFixed(2)}
-              </Text>
-
-              {/* Exibição das observações */}
-              {viewingOrder?.observations ? (
-                <>
-                  <Text style={{ fontWeight: "600", marginTop: 12 }}>Observações:</Text>
-                  <Text style={{ color: THEME.muted, marginTop: 6 }}>{viewingOrder.observations}</Text>
-                </>
-              ) : null}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+  {/* Bluetooth picker removed */}
     </View>
   );
 };
@@ -410,4 +365,8 @@ const styles = StyleSheet.create({
   },
   viewModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   viewModalTitle: { fontSize: 18, fontWeight: "700", color: "#111827" },
+  viewModalHeaderRight: { flexDirection: "row", alignItems: "center" },
+  viewModalFooter: { marginTop: 12, flexDirection: "row", justifyContent: "flex-end" },
+  footerButton: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  footerButtonLabel: { marginLeft: 8, fontWeight: "700", color: "#fff" },
 });
