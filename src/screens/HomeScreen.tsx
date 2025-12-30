@@ -1,88 +1,31 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Modal, Pressable, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../types/navigation';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, View, Text, StyleSheet, Dimensions, Pressable, ScrollView, RefreshControl } from 'react-native';
+import { useDispatch } from 'react-redux';
 import THEME from '../styles/theme';
-
-// Types
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
-type DailyRevenuePoint = { iso: string; total: number };
+import { API_URL } from '../config/api';
+import { getToken } from '../auth/tokenStorage';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { handleAuthErrorResponse } from '../utils/authErrorHandler';
 
 const { width } = Dimensions.get('window');
-
-function genMockLast7(): DailyRevenuePoint[] {
-  const arr: DailyRevenuePoint[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10); // YYYY-MM-DD
-    arr.push({ iso, total: Math.round(200 + Math.random() * 3000) });
-  }
-  return arr;
-}
-
-function shortCurrency(value: number) {
-  // e.g. 1200 -> R$ 1,2k  | small values keep full format without cents
-  if (value >= 1000) {
-    // divide by 1000 and keep one decimal when needed
-    const kRaw = Math.round((value / 1000) * 10) / 10; // one decimal in thousands
-    const kStr = kRaw % 1 === 0 ? kRaw.toFixed(0) : kRaw.toFixed(1);
-    return `R$ ${kStr.replace('.', ',')}k`;
-  }
-  // show integer BRL without cents to avoid long strings
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
-}
-
-const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-
-const SimpleBarChart: React.FC<{ data: DailyRevenuePoint[]; onBarPress?: (p: DailyRevenuePoint) => void }> = ({ data, onBarPress }) => {
-  const max = Math.max(...data.map((d) => d.total), 1);
-
-  return (
-    <View style={styles.chartContainer}>
-      <Text style={styles.chartTitle}>Faturamento diário (últimos 7 dias)</Text>
-      <View style={styles.chartInner}>
-        {data.map((d) => {
-          const barHeight = Math.round((d.total / max) * 140);
-          const dateObj = new Date(d.iso + 'T00:00:00');
-          const weekday = weekdays[dateObj.getDay()];
-          return (
-            <Pressable
-              key={d.iso}
-              style={styles.chartColumn}
-              onPress={() => onBarPress && onBarPress(d)}
-            >
-              {/* value on top to avoid wrapping under the label */}
-              <Text style={styles.barValue} numberOfLines={1} ellipsizeMode="tail">
-                {shortCurrency(d.total)}
-              </Text>
-              <View style={[styles.bar, { height: barHeight, backgroundColor: THEME.primary }]} />
-              <Text style={styles.barLabel} numberOfLines={1} ellipsizeMode="tail">
-                {weekday}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-};
 
 // Orders per hour chart (6:00 - 18:00)
 type HourPoint = { hour: number; count: number };
 
-function genMockOrdersByHour(): HourPoint[] {
-  const arr: HourPoint[] = [];
-  for (let h = 6; h <= 18; h++) {
-    // generate 0..20 orders per hour with a peak around midday
-    const peak = 12;
-    const distance = Math.abs(h - peak);
-    const base = Math.max(0, 12 - distance * 1.8);
-    const rand = Math.round(base + Math.random() * 6);
-    arr.push({ hour: h, count: rand });
-  }
-  return arr;
+type OrdersByHourApiPoint = { hour: number; count: number };
+type OrdersByHourApiResponse = {
+  date: string;
+  timezone?: string;
+  startHour?: number;
+  endHour?: number;
+  points: OrdersByHourApiPoint[];
+};
+
+function toLocalISODate(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 // Vertical hour chart: each hour is a row with a horizontal bar
@@ -113,17 +56,13 @@ const SimpleHourChart: React.FC<{ data: HourPoint[]; onBarPress?: (p: HourPoint)
 // Top 10 products sold (vertical list with horizontal bars)
 type ProductPoint = { id: string; name: string; sold: number };
 
-function genMockTopProducts(): ProductPoint[] {
-  const products: ProductPoint[] = [];
-  const sampleNames = ['Café', 'Pão', 'Refrigerante', 'Suco', 'Sanduíche', 'Bolo', 'Água', 'Salada', 'Hambúrguer', 'Pizza', 'Cookie', 'Chá'];
-  // pick 10 with descending sold counts
-  for (let i = 0; i < 10; i++) {
-    const name = sampleNames[i % sampleNames.length] + (i >= 5 ? ` ${i}` : '');
-    const sold = Math.round(60 - i * 4 + Math.random() * 10); // decreasing
-    products.push({ id: `p${i}`, name, sold });
-  }
-  return products.sort((a, b) => b.sold - a.sold).slice(0, 10);
-}
+type TopProductsApiItem = { productId: number; productName: string; soldQuantity: number };
+type TopProductsApiResponse = {
+  startDate: string;
+  endDate: string;
+  limit?: number;
+  items: TopProductsApiItem[];
+};
 
 const SimpleTopProductsChart: React.FC<{ data: ProductPoint[]; onItemPress?: (p: ProductPoint) => void }> = ({ data, onItemPress }) => {
   const max = Math.max(...data.map((d) => d.sold), 1);
@@ -147,44 +86,133 @@ const SimpleTopProductsChart: React.FC<{ data: ProductPoint[]; onItemPress?: (p:
 };
 
 export default function HomeScreen() {
-  const navigation = useNavigation<NavigationProp>();
+  const dispatch = useDispatch();
 
-  // generate once
-  const revenue = useMemo(() => genMockLast7(), []);
-  const [selected, setSelected] = useState<DailyRevenuePoint | null>(null);
-  const ordersByHour = useMemo(() => genMockOrdersByHour(), []);
-  const topProducts = useMemo(() => genMockTopProducts(), []);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const [ordersByHour, setOrdersByHour] = useState<HourPoint[]>(() => {
+    const pts: HourPoint[] = [];
+    for (let h = 6; h <= 18; h++) pts.push({ hour: h, count: 0 });
+    return pts;
+  });
+  const [topProducts, setTopProducts] = useState<ProductPoint[]>([]);
+
+  const fetchOrdersByHour = useCallback(async () => {
+    const date = toLocalISODate(new Date());
+    const startHour = 6;
+    const endHour = 18;
+    const status = 'CONCLUDED';
+    const timezone = 'America/Sao_Paulo';
+
+    const token = await getToken();
+    const url = `${API_URL}/dashboard/orders-by-hour?date=${encodeURIComponent(date)}&startHour=${startHour}&endHour=${endHour}&status=${encodeURIComponent(status)}&timezone=${encodeURIComponent(timezone)}`;
+
+    const response = await fetchWithTimeout(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      timeoutMs: 15000,
+    });
+
+    if (!response.ok) {
+      const handled = await handleAuthErrorResponse(response, dispatch);
+      if (handled) return;
+      const errorText = await response.text();
+      console.error('orders-by-hour failed', { status: response.status, errorText });
+      throw new Error('Falha ao carregar pedidos por hora.');
+    }
+
+    const data = (await response.json()) as OrdersByHourApiResponse;
+    const map = new Map<number, number>((data.points || []).map((p) => [p.hour, p.count]));
+    const filled: HourPoint[] = [];
+    for (let h = startHour; h <= endHour; h++) {
+      filled.push({ hour: h, count: map.get(h) ?? 0 });
+    }
+    setOrdersByHour(filled);
+  }, [dispatch]);
+
+  const fetchTopProducts = useCallback(async () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 6);
+
+    const startDate = toLocalISODate(start);
+    const endDate = toLocalISODate(end);
+    const limit = 10;
+    const status = 'CONCLUDED';
+    const timezone = 'America/Sao_Paulo';
+
+    const token = await getToken();
+    const url = `${API_URL}/dashboard/top-products?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&limit=${limit}&status=${encodeURIComponent(status)}&timezone=${encodeURIComponent(timezone)}`;
+
+    const response = await fetchWithTimeout(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      timeoutMs: 15000,
+    });
+
+    if (!response.ok) {
+      const handled = await handleAuthErrorResponse(response, dispatch);
+      if (handled) return;
+      const errorText = await response.text();
+      console.error('top-products failed', { status: response.status, errorText });
+      throw new Error('Falha ao carregar top produtos.');
+    }
+
+    const data = (await response.json()) as TopProductsApiResponse;
+    const mapped: ProductPoint[] = (data.items || []).map((it) => ({
+      id: String(it.productId),
+      name: it.productName,
+      sold: it.soldQuantity,
+    }));
+    setTopProducts(mapped);
+  }, [dispatch]);
+
+  const refreshDashboard = useCallback(async () => {
+    try {
+      await Promise.all([fetchOrdersByHour(), fetchTopProducts()]);
+    } catch (e: any) {
+      console.error('refreshDashboard error', e);
+      Alert.alert('Erro', e?.message || 'Falha ao carregar dados do dashboard.');
+    }
+  }, [fetchOrdersByHour, fetchTopProducts]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshDashboard();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refreshDashboard]);
+
+  useEffect(() => {
+    refreshDashboard();
+  }, [refreshDashboard]);
 
   return (
     <View style={styles.simpleContainer}>
-      <Text style={styles.welcome}>Bem-vindo</Text>
-
       <View style={styles.chartsWrap}>
-        <ScrollView contentContainerStyle={styles.scrollCharts} showsVerticalScrollIndicator={false}>
-          <SimpleBarChart data={revenue} onBarPress={(p) => setSelected(p)} />
+        <ScrollView
+          contentContainerStyle={styles.scrollCharts}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              colors={[THEME.primary]}
+              tintColor={THEME.primary}
+            />
+          }
+        >
+          <Text style={styles.welcome}>Bem-vindo</Text>
 
           <SimpleHourChart data={ordersByHour} />
 
           <SimpleTopProductsChart data={topProducts} />
         </ScrollView>
       </View>
-
-      <Modal visible={!!selected} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Faturamento</Text>
-            {selected && (
-              <>
-                <Text style={styles.modalDate}>{new Date(selected.iso).toLocaleDateString('pt-BR')}</Text>
-                <Text style={styles.modalValue}>{selected.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</Text>
-              </>
-            )}
-            <Pressable style={[styles.modalClose]} onPress={() => setSelected(null)}>
-              <Text style={styles.modalCloseText}>Fechar</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -284,37 +312,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 8,
   },
-  chartInner: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 180,
-    paddingHorizontal: 1,
-  },
-  chartColumn: {
-    alignItems: 'center',
-    flex: 1,
-    minWidth: 38,
-    marginHorizontal: 1,
-  },
-  bar: {
-    width: '75%',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    alignSelf: 'center',
-  },
-  barLabel: {
-    marginTop: 6,
-    fontSize: 11,
-    color: THEME.muted,
-    maxWidth: 48,
-  },
-  barValue: {
-    fontSize: 11,
-    color: THEME.text,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
   simpleContainer: {
     flex: 1,
     alignItems: 'center',
@@ -341,47 +338,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
     textAlign: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCard: {
-    width: '80%',
-    backgroundColor: THEME.card,
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    elevation: 6,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: THEME.text,
-    marginBottom: 8,
-  },
-  modalDate: {
-    color: THEME.muted,
-    marginBottom: 4,
-  },
-  modalValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: THEME.primary,
-    marginBottom: 12,
-  },
-  modalClose: {
-    marginTop: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: THEME.primary,
-    borderRadius: 6,
-  },
-  modalCloseText: {
-    color: '#fff',
-    fontWeight: '700',
   },
   hourList: {
     width: '100%',

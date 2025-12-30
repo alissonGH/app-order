@@ -1,66 +1,241 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Modal, Alert, ScrollView, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Modal, Alert, ScrollView, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { useDispatch } from 'react-redux';
+import DropDownPicker from 'react-native-dropdown-picker';
 import { THEME } from '../styles/theme';
-
-interface Product {
-  id: number;
-  name: string;
-  price: number;
-  description?: string;
-}
+import { Category, Product } from '../types/models';
+import { API_URL } from '../config/api';
+import { getToken } from '../auth/tokenStorage';
+import { handleAuthErrorResponse } from '../utils/authErrorHandler';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 interface FormState {
   name: string;
-  price: string; // formatted string (e.g. "12,34")
+  price: string;
   description: string;
+  categoryId: string;
 }
 
 const MAX_DESCRIPTION = 500;
 
 const ProductScreen: React.FC = () => {
-  const [products, setProducts] = useState<Product[]>([
-    { id: 1, name: 'Produto A', price: 199.99, description: 'Descrição do Produto A' },
-    { id: 2, name: 'Produto B', price: 49.99, description: 'Descrição do Produto B' },
-    { id: 3, name: 'Produto C', price: 99.99, description: 'Descrição do Produto C' },
-  ]);
+  const dispatch = useDispatch();
+
+  const getAlertMessage = (e: any, fallback: string) => {
+    const msg = typeof e?.message === 'string' ? e.message.trim() : '';
+    if (!msg) return fallback;
+    if (msg.length > 120) return fallback;
+    if (msg.includes('\n') || msg.includes('\r')) return fallback;
+    if (/^\d{3}\s*-/.test(msg)) return fallback;
+    return msg;
+  };
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
 
   const [filter, setFilter] = useState<string>('');
   const [modalVisible, setModalVisible] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [form, setForm] = useState<FormState>({ name: '', price: '', description: '' });
+  const [form, setForm] = useState<FormState>({ name: '', price: '', description: '', categoryId: '1' });
 
-  const handleSave = () => {
-    // validação: nome e preço são obrigatórios
+  const isLoadingAny = isLoadingProducts || isLoadingCategories;
+
+  const [categoryOpen, setCategoryOpen] = useState<boolean>(false);
+  const [categoryValue, setCategoryValue] = useState<number | null>(Number(form.categoryId || 1));
+  const [categoryItems, setCategoryItems] = useState<any[]>([]);
+
+  const fetchProducts = useCallback(async () => {
+    setIsLoadingProducts(true);
+    try {
+      const token = await getToken();
+      const response = await fetchWithTimeout(`${API_URL}/products`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        timeoutMs: 10000,
+      });
+
+      if (!response.ok) {
+        const handled = await handleAuthErrorResponse(response, dispatch);
+        if (handled) return;
+        throw new Error('A resposta da rede não foi boa');
+      }
+
+      const data: Product[] = await response.json();
+      setProducts(data);
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Erro', 'Falha ao buscar produtos. Verifique sua conexão e o servidor.', [
+        { text: 'OK' },
+        { text: 'Tentar novamente', onPress: fetchProducts },
+      ]);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [dispatch]);
+
+  const fetchCategories = useCallback(async () => {
+    setIsLoadingCategories(true);
+    try {
+      const token = await getToken();
+      const response = await fetchWithTimeout(`${API_URL}/categories`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        timeoutMs: 10000,
+      });
+
+      if (!response.ok) {
+        const handled = await handleAuthErrorResponse(response, dispatch);
+        if (handled) return;
+        throw new Error('A resposta da rede não foi boa');
+      }
+
+      const data: Category[] = await response.json();
+      setCategories(data);
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Erro', 'Falha ao buscar categorias. Verifique sua conexão e o servidor.', [
+        { text: 'OK' },
+        { text: 'Tentar novamente', onPress: fetchCategories },
+      ]);
+    } finally {
+      setIsLoadingCategories(false);
+    }
+  }, [dispatch]);
+
+  const deactivateProduct = useCallback(
+    async (productId: number) => {
+      setIsMutating(true);
+
+      try {
+        const token = await getToken();
+        const response = await fetchWithTimeout(`${API_URL}/products/${productId}/deactivate`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          timeoutMs: 15000,
+        });
+
+        if (!response.ok) {
+          const handled = await handleAuthErrorResponse(response, dispatch);
+          if (handled) return;
+
+          if (response.status === 409) {
+            // não exibir resposta crua do backend
+            throw new Error('Produto já está desativado.');
+          }
+
+          const errorText = await response.text();
+          console.error('deactivateProduct failed', { productId, status: response.status, errorText });
+          throw new Error('Falha ao desativar o produto.');
+        }
+
+        await fetchProducts();
+      } catch (e: any) {
+        console.error(e);
+        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao desativar o produto.'));
+      } finally {
+        setIsMutating(false);
+      }
+    },
+    [dispatch, fetchProducts]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProducts();
+      fetchCategories();
+    }, [fetchProducts, fetchCategories])
+  );
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([fetchProducts(), fetchCategories()]);
+  }, [fetchProducts, fetchCategories]);
+
+  useEffect(() => {
+    setCategoryItems(
+      (categories || [])
+        .filter((c) => c.id != null)
+        .map((c) => ({ label: c.name, value: c.id, data: c }))
+    );
+  }, [categories]);
+
+  useEffect(() => {
+    const n = Number((form.categoryId || '').toString().trim());
+    setCategoryValue(Number.isFinite(n) ? n : null);
+  }, [form.categoryId]);
+
+  const handleSave = async () => {
     const name = (form.name || '').toString().trim();
     const priceRaw = (form.price || '').toString().replace(',', '.');
     const priceNumber = parseFloat(priceRaw);
+    const description = (form.description || '').toString();
+    const categoryIdNumber = Number((form.categoryId || '').toString().trim());
 
     if (!name || isNaN(priceNumber)) {
       Alert.alert('Erro', 'Nome e preço são obrigatórios e o preço deve ser um número válido.');
       return;
     }
 
-    if (editingProduct) {
-      setProducts((prevProducts) =>
-        prevProducts.map((product) =>
-          product.id === editingProduct.id
-            ? { ...product, ...form, price: priceNumber }
-            : product
-        )
-      );
-    } else {
-      const newProduct = {
-        id: products.length + 1,
-        ...form,
-        price: priceNumber,
-      };
-      setProducts((prevProducts) => [...prevProducts, newProduct]);
+    if (!Number.isFinite(categoryIdNumber) || categoryIdNumber <= 0) {
+      Alert.alert('Erro', 'Categoria é obrigatória e deve ser um número válido.');
+      return;
     }
 
-    setModalVisible(false);
-    setForm({ name: '', price: '', description: '' });
-    setEditingProduct(null);
+    setIsMutating(true);
+
+    try {
+      const token = await getToken();
+
+      // Payload conforme backend (ex.: { name, price, categoryId })
+      const payload: any = {
+        name,
+        price: priceNumber,
+        categoryId: categoryIdNumber,
+        ...(description ? { description } : {}),
+      };
+
+      const isEdit = editingProduct != null;
+      if (isEdit && editingProduct.id == null) {
+        throw new Error('Não foi possível editar: produto sem id.');
+      }
+
+      const url = isEdit ? `${API_URL}/products/${editingProduct!.id}` : `${API_URL}/products`;
+
+      const response = await fetchWithTimeout(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+        timeoutMs: 15000,
+      });
+
+      if (!response.ok) {
+        const handled = await handleAuthErrorResponse(response, dispatch);
+        if (handled) return;
+        const errorText = await response.text();
+        console.error('saveProduct failed', { method: isEdit ? 'PUT' : 'POST', status: response.status, errorText });
+        throw new Error(isEdit ? 'Falha ao atualizar o produto.' : 'Falha ao criar o produto.');
+      }
+
+      setModalVisible(false);
+      setForm({ name: '', price: '', description: '', categoryId: '1' });
+      setEditingProduct(null);
+      await fetchProducts();
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao salvar o produto.'));
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   const handleEdit = (product: Product) => {
@@ -69,6 +244,7 @@ const ProductScreen: React.FC = () => {
       name: product.name,
       price: product.price.toFixed(2).replace('.', ','),
       description: product.description ?? '',
+      categoryId: String(product.category?.id ?? 1),
     });
     setModalVisible(true);
   };
@@ -76,13 +252,13 @@ const ProductScreen: React.FC = () => {
   const handleDelete = (productId: number) => {
     Alert.alert(
       'Excluir Produto',
-      'Tem certeza de que deseja excluir este produto?',
+      'Tem certeza de que deseja excluir este produto? Esta ação irá desativá-lo (active = false).',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: () => setProducts((prevProducts) => prevProducts.filter((product) => product.id !== productId)),
+          onPress: () => deactivateProduct(productId),
         },
       ]
     );
@@ -94,14 +270,21 @@ const ProductScreen: React.FC = () => {
     setForm((prev) => ({ ...prev, price: formattedValue }));
   };
 
-  const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filteredProducts = useMemo(() => {
+    const q = (filter || '').toString().trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((product) => (product.name || '').toLowerCase().includes(q));
+  }, [products, filter]);
 
-  const renderItem = ({ item }: { item: Product }) => (
+  const renderItem = ({ item }: { item: Product }) => {
+    const isDeleteDisabled = isMutating;
+    const categoryLabel = item.category?.name || (item.category?.id != null ? `Categoria #${item.category.id}` : 'Categoria -');
+
+    return (
     <View style={styles.card}>
       <View style={styles.cardContent}>
         <Text style={styles.name}>{item.name}</Text>
+        <Text style={styles.category}>{categoryLabel}</Text>
         <Text style={[styles.price, { color: THEME.primary }]}>R$ {item.price.toFixed(2)}</Text>
         {item.description && <Text style={styles.description}>{item.description}</Text>}
       </View>
@@ -109,12 +292,20 @@ const ProductScreen: React.FC = () => {
         <TouchableOpacity style={styles.editButton} onPress={() => handleEdit(item)}>
           <Text style={styles.editButtonText}>Editar</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.deleteButton} onPress={() => handleDelete(item.id)}>
+        <TouchableOpacity
+          style={[styles.deleteButton, isDeleteDisabled && styles.deleteButtonDisabled]}
+          disabled={isDeleteDisabled}
+          onPress={() => {
+            if (isDeleteDisabled) return;
+            if (item.id != null) handleDelete(item.id);
+          }}
+        >
           <Text style={styles.deleteButtonText}>Excluir</Text>
         </TouchableOpacity>
       </View>
     </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -129,16 +320,24 @@ const ProductScreen: React.FC = () => {
 
       <FlatList
         data={filteredProducts}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => (item.id ?? 0).toString()}
         renderItem={renderItem}
         contentContainerStyle={styles.listContainer}
         ListEmptyComponent={<Text style={styles.emptyText}>Nenhum produto encontrado</Text>}
+        refreshControl={
+          <RefreshControl refreshing={isLoadingAny} onRefresh={refreshAll} colors={[THEME.primary]} tintColor={THEME.primary} />
+        }
       />
+
+      {isLoadingProducts && !products.length && (
+        <ActivityIndicator size="large" color={THEME.primary} style={StyleSheet.absoluteFill} />
+      )}
 
       <TouchableOpacity
         style={[styles.floatingButton, { backgroundColor: THEME.primary }]}
         onPress={() => {
-          setForm({ name: '', price: '', description: '' });
+          setForm({ name: '', price: '', description: '', categoryId: '1' });
+          setCategoryOpen(false);
           setEditingProduct(null);
           setModalVisible(true);
         }}
@@ -182,6 +381,38 @@ const ProductScreen: React.FC = () => {
                 onChangeText={handlePriceChange}
               />
 
+              <View style={styles.dropdownWrap}>
+                <DropDownPicker
+                  open={categoryOpen}
+                  value={categoryValue}
+                  items={categoryItems}
+                  setOpen={setCategoryOpen}
+                  setValue={(cb) => {
+                    const next = cb(categoryValue);
+                    setCategoryValue(next);
+                    setForm((prev) => ({ ...prev, categoryId: next != null ? String(next) : '' }));
+                  }}
+                  setItems={setCategoryItems}
+                  listMode="SCROLLVIEW"
+                  placeholder="Selecione a categoria..."
+                  searchable={true}
+                  searchPlaceholder="Buscar categoria..."
+                  disabled={isLoadingCategories || categoryItems.length === 0}
+                  zIndex={2000}
+                  style={{
+                    borderColor: THEME.border,
+                    backgroundColor: THEME.card,
+                    marginBottom: categoryOpen ? 200 : 10,
+                  }}
+                  dropDownContainerStyle={{
+                    borderColor: THEME.border,
+                    backgroundColor: THEME.card,
+                  }}
+                  textStyle={{ color: '#111827' }}
+                  searchTextInputStyle={{ borderColor: THEME.border }}
+                />
+              </View>
+
               <TextInput
                 style={[styles.observationsInput, { borderColor: THEME.border, backgroundColor: THEME.card }]}
                 placeholder="Descrição"
@@ -201,7 +432,11 @@ const ProductScreen: React.FC = () => {
               </View>
 
               <View style={{ marginTop: 8 }}>
-                <TouchableOpacity style={[styles.saveButton, { backgroundColor: THEME.success }]} onPress={handleSave}>
+                <TouchableOpacity
+                  style={[styles.saveButton, { backgroundColor: THEME.success }, isMutating && styles.saveButtonDisabled]}
+                  onPress={handleSave}
+                  disabled={isMutating}
+                >
                   <Text style={styles.buttonText}>Salvar</Text>
                 </TouchableOpacity>
               </View>
@@ -239,6 +474,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 20,
   },
+  errorContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: THEME.danger,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  retryButton: {
+    color: THEME.primary,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   card: {
     backgroundColor: THEME.card,
     borderRadius: 8,
@@ -258,6 +508,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: THEME.text,
+  },
+  category: {
+    marginTop: 4,
+    fontSize: 13,
+    color: THEME.muted,
   },
   price: {
     fontSize: 16,
@@ -285,6 +540,9 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 4,
     marginLeft: 8,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.5,
   },
   deleteButtonText: {
     color: '#fff',
@@ -334,6 +592,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     marginBottom: 12,
   },
+  dropdownWrap: {
+    width: '100%',
+    zIndex: 2000,
+  },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -346,6 +608,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
     alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     color: '#fff',

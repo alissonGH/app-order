@@ -1,30 +1,40 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import colors from '../styles/colors'; // Importa as cores globais
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';  // Usando MaterialCommunityIcons
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../types/navigation';
+import { useDispatch } from 'react-redux';
+import colors from '../styles/colors';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { clearToken } from '../auth/authSlice';
+import { deleteToken, getToken } from '../auth/tokenStorage';
+import { API_URL } from '../config/api';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
-
-const Header = () => {
-  const navigation = useNavigation<NavigationProp>();
-  const route = useRoute();
+const Header = ({ navigation, route }: { navigation: any; route: any }) => {
   const [expanded, setExpanded] = useState(false);
+  const dispatch = useDispatch();
 
-  const handleLogout = () => {
-    console.log('Logout realizado');
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Login' }],
-    });
+  const handleLogout = async () => {
+    try {
+      const token = await getToken();
+      if (token) {
+        await fetch(`${API_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: '',
+        });
+      }
+    } catch (error) {
+    } finally {
+      await deleteToken();
+      dispatch(clearToken());
+    }
   };
 
   const isLoginScreen = route.name === 'Login';
 
   const handleNavigateHome = () => {
-    navigation.navigate('Home'); // Redireciona para a tela "Home"
+    navigation.navigate('Home');
   };
   
   if (isLoginScreen) return null;
@@ -55,6 +65,11 @@ const Header = () => {
           <TouchableOpacity style={styles.menuItem} onPress={() => { setExpanded(false); navigation.navigate('Products'); }}>
             <Icon name="package-variant" size={20} color={colors.textLight} />
             <Text style={styles.menuItemText}>Produtos</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => { setExpanded(false); navigation.navigate('Categories'); }}>
+            <Icon name="shape" size={20} color={colors.textLight} />
+            <Text style={styles.menuItemText}>Categorias</Text>
           </TouchableOpacity>
         </View>
       )}

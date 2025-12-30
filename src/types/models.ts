@@ -1,11 +1,22 @@
-export interface Product {
-  id: number | null;
+export interface Category {
+  id?: number;
   name: string;
-  price?: number;
+  active?: boolean;
+}
+
+export interface Product {
+  id?: number;
+  name: string;
+  category: Category;
+  price: number;
+  description?: string;
+  active?: boolean;
 }
 
 export interface OrderItem {
+  id?: number;
   product?: Product | null;
+  order?: Order | null;
   quantity: number;
   subTotal?: number;
 }
@@ -13,10 +24,10 @@ export interface OrderItem {
 export interface Order {
   id?: number;
   customer?: string;
-  tableNumber?: string | number;
+  tableNumber?: number;
   items?: OrderItem[];
-  observations?: string;
+  observation?: string;
   creationDate?: string;
-  orderStatus?: string;
   totalValue?: number;
+  orderStatus?: string;
 }

@@ -16,7 +16,9 @@ const ProductDropdown: React.FC<Props> = ({ products, selectedProduct, onSelect 
 
   useEffect(() => {
     setItems(
-      products.map((p) => ({
+      products
+        .filter((p) => p.id != null)
+        .map((p) => ({
         label: `${p.name} - R$ ${Number(p.price ?? 0).toFixed(2)}`,
         value: p.id,
         data: p,
@@ -25,7 +27,7 @@ const ProductDropdown: React.FC<Props> = ({ products, selectedProduct, onSelect 
   }, [products]);
 
   useEffect(() => {
-    setValue(selectedProduct ? selectedProduct.id : null);
+    setValue(selectedProduct?.id ?? null);
   }, [selectedProduct]);
 
   return (
@@ -36,6 +38,11 @@ const ProductDropdown: React.FC<Props> = ({ products, selectedProduct, onSelect 
       setOpen={setOpen}
       setValue={setValue}
       onChangeValue={(val) => {
+        if (val == null) {
+          onSelect(null);
+          return;
+        }
+
         const selected = products.find((p) => p.id === val);
         if (selected) onSelect(selected);
       }}

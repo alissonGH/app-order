@@ -17,13 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import ProductDropdown from "./ProductDropdown";
 import { THEME } from "../styles/theme";
 
-/**
- * OrderModal atualizado:
- * - campo `observations` (multiline) com contador de caracteres
- * - observations carregado de initialOrder, incluído no snapshot e enviado em onSave
- */
-
-const MAX_OBSERVATIONS = 500;
+const MAX_OBSERVATION_LENGTH = 500;
 
 interface OrderModalProps {
   isVisible: boolean;
@@ -39,7 +33,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
   const [items, setItems] = useState<OrderItem[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState<string>("");
-  const [observations, setObservations] = useState<string>(""); // novo campo
+  const [observation, setObservation] = useState<string>(""); // novo campo
   const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
 
   const originalSnapshot = useRef<any>(null);
@@ -49,8 +43,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
       if (initialOrder) {
         setCustomer(initialOrder.customer || "");
         setTableNumber(String(initialOrder.tableNumber || ""));
-        setObservations(initialOrder.observations ?? ""); // carregar observations
-        // normalize items: garantir quantity e subTotal
+        setObservation(initialOrder.observation ?? "");
         const rawItems = (initialOrder.items || []) as any[];
         const normalized = rawItems.map((it: any) => {
           const qty = Number(it.quantity ?? it.qty ?? 0);
@@ -60,7 +53,13 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
             ...it,
             quantity: qty,
             subTotal,
-            product: it.product ?? { id: it.product?.id ?? null, name: it.product?.name ?? "Produto", price },
+            product: it.product ?? {
+              id: it.product?.id,
+              name: it.product?.name ?? "Produto",
+              category: it.product?.category ?? { name: "" },
+              price,
+              description: it.product?.description,
+            },
           } as OrderItem;
         });
         setItems(normalized);
@@ -68,7 +67,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
         setCustomer("");
         setTableNumber("");
         setItems([]);
-        setObservations("");
+        setObservation("");
       }
       setSelectedProduct(null);
       setQuantity("");
@@ -77,7 +76,6 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
         originalSnapshot.current = takeSnapshot();
       }, 0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialOrder, isVisible]);
 
   useEffect(() => {
@@ -100,7 +98,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
     customer: customer || "",
     tableNumber: String(tableNumber || ""),
     items: (items || []).map((it) => ({ id: it.product?.id, qty: it.quantity })),
-    observations: observations ?? "",
+    observation: observation ?? "",
   });
 
   const hasUnsavedChanges = () => {
@@ -116,7 +114,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
       if (!a || !b) return true;
       if (a.id !== b.id || a.qty !== b.qty) return true;
     }
-    if ((orig.observations || "") !== (cur.observations || "")) return true;
+    if ((orig.observation || "") !== (cur.observation || "")) return true;
     return false;
   };
 
@@ -126,7 +124,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
     setItems([]);
     setSelectedProduct(null);
     setQuantity("");
-    setObservations("");
+    setObservation("");
     originalSnapshot.current = null;
     onClose();
   };
@@ -151,7 +149,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
   };
 
   const handleAddProduct = () => {
-    if (!selectedProduct || !quantity || Number(quantity) <= 0) {
+    if (!selectedProduct || selectedProduct.id == null || !quantity || Number(quantity) <= 0) {
       Alert.alert("Erro", "Selecione um produto e informe uma quantidade válida.");
       return;
     }
@@ -227,6 +225,12 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
       return;
     }
 
+    const hasInvalidProduct = items.some((it) => it.product?.id == null);
+    if (hasInvalidProduct) {
+      Alert.alert("Erro", "Existe item sem produto válido. Selecione um produto novamente.");
+      return;
+    }
+
     const normalizedItems = items.map((it) => ({
       ...it,
       quantity: Number(it.quantity ?? 0),
@@ -236,9 +240,9 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
     const order = {
       id: initialOrder?.id,
       customer,
-      tableNumber,
+      tableNumber: Number(tableNumber),
       items: normalizedItems,
-      observations: observations ?? "", // incluir observations
+      observation: observation ?? "",
       creationDate: initialOrder?.creationDate || new Date().toISOString(),
       orderStatus: initialOrder?.orderStatus || "PENDING",
       totalValue: normalizedItems.reduce((acc, i) => acc + Number(i.subTotal ?? 0), 0),
@@ -256,7 +260,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
 
   const total = items.reduce((acc, i) => acc + Number(i.subTotal ?? (i.product?.price ?? 0) * (i.quantity ?? 0)), 0);
 
-  const obsLength = observations ? observations.length : 0;
+  const obsLength = observation ? observation.length : 0;
 
   return (
     <Modal visible={isVisible} animationType="slide" transparent>
@@ -280,7 +284,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
             <TextInput
               style={[styles.input, { borderColor: THEME.border, backgroundColor: THEME.card }]}
               placeholder="Nome do Cliente"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={THEME.muted}
               value={customer}
               onChangeText={setCustomer}
             />
@@ -288,7 +292,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
             <TextInput
               style={[styles.input, { borderColor: THEME.border, backgroundColor: THEME.card }]}
               placeholder="Número da Mesa"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={THEME.muted}
               keyboardType="numeric"
               value={tableNumber}
               onChangeText={setTableNumber}
@@ -299,7 +303,7 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
             <TextInput
               style={[styles.input, { borderColor: THEME.border, backgroundColor: THEME.card }]}
               placeholder="Quantidade"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={THEME.muted}
               keyboardType="numeric"
               value={quantity}
               onChangeText={setQuantity}
@@ -350,18 +354,18 @@ const OrderModal: React.FC<OrderModalProps> = ({ isVisible, onClose, onSave, ini
             <TextInput
               style={[styles.observationsInput, { borderColor: THEME.border, backgroundColor: THEME.card }]}
               placeholder="Adicionar observações do pedido..."
-              placeholderTextColor="#9ca3af"
-              value={observations}
+              placeholderTextColor={THEME.muted}
+              value={observation}
               onChangeText={(text) => {
-                if (text.length <= MAX_OBSERVATIONS) setObservations(text);
+                if (text.length <= MAX_OBSERVATION_LENGTH) setObservation(text);
               }}
               multiline
               textAlignVertical="top"
               numberOfLines={4}
-              maxLength={MAX_OBSERVATIONS}
+              maxLength={MAX_OBSERVATION_LENGTH}
             />
             <View style={styles.obsCounterRow}>
-              <Text style={styles.obsCounterText}>{obsLength}/{MAX_OBSERVATIONS}</Text>
+              <Text style={styles.obsCounterText}>{obsLength}/{MAX_OBSERVATION_LENGTH}</Text>
             </View>
 
             <Text style={styles.totalText}>Total: R$ {Number(total ?? 0).toFixed(2)}</Text>

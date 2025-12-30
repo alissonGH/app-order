@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,26 +8,21 @@ import {
   Switch,
   Alert,
   TextInput,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useDispatch } from "react-redux";
 import OrderModal from "../components/OrderModal";
 import printOrder from "../utils/printer";
 import { THEME } from "../styles/theme";
-
-const productsList = [
-  { id: 1, name: "Produto A", price: 40.0 },
-  { id: 2, name: "Produto B", price: 25.0 },
-  { id: 3, name: "Produto C", price: 15.5 },
-  { id: 4, name: "Produto D", price: 30.0 },
-  { id: 5, name: "Produto E", price: 20.0 },
-  { id: 6, name: "Produto F", price: 50.0 },
-  { id: 7, name: "Produto G", price: 10.0 },
-  { id: 8, name: "Produto H", price: 22.5 },
-  { id: 9, name: "Produto I", price: 35.0 },
-  { id: 10, name: "Produto J", price: 18.0 },
-];
-
-import { Order } from "../types/models";
+import { API_URL } from "../config/api";
+import { Order, Product } from "../types/models";
+import { CreateOrderDTO, UpdateOrderDTO } from "../types/orderDtos";
+import { getToken } from "../auth/tokenStorage";
+import { handleAuthErrorResponse } from "../utils/authErrorHandler";
+import { fetchWithTimeout } from "../utils/fetchWithTimeout";
 
 const truncate = (str: string | undefined, n: number) => {
   if (!str) return "";
@@ -35,15 +30,96 @@ const truncate = (str: string | undefined, n: number) => {
 };
 
 const OrdersScreen: React.FC = () => {
+  const dispatch = useDispatch();
+
+  const getAlertMessage = (e: any, fallback: string) => {
+    const msg = typeof e?.message === 'string' ? e.message.trim() : '';
+    if (!msg) return fallback;
+    if (msg.length > 120) return fallback;
+    if (msg.includes('\n') || msg.includes('\r')) return fallback;
+    if (/^\d{3}\s*-/.test(msg)) return fallback;
+    return msg;
+  };
   const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [isConcludedFilter, setIsConcludedFilter] = useState<boolean>(false);
-
-  // novo estado para filtro por cliente/mesa
   const [filterText, setFilterText] = useState<string>("");
 
-  // Filtra por status (PENDING/CONCLUDED) e por texto (cliente ou mesa)
+  const isLoadingAny = isLoading || isLoadingProducts;
+
+  const fetchOrders = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const token = await getToken();
+      const response = await fetchWithTimeout(`${API_URL}/orders`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        timeoutMs: 10000,
+      });
+      if (!response.ok) {
+        const handled = await handleAuthErrorResponse(response, dispatch);
+        if (handled) return;
+        throw new Error("A resposta da rede não foi boa");
+      }
+      const data: Order[] = await response.json();
+      setOrders(data);
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Erro', 'Falha ao buscar pedidos. Verifique sua conexão e o servidor.', [
+        { text: 'OK' },
+        { text: 'Tentar novamente', onPress: fetchOrders },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [dispatch]);
+
+  const fetchProducts = useCallback(async () => {
+    setIsLoadingProducts(true);
+    try {
+      const token = await getToken();
+      const response = await fetchWithTimeout(`${API_URL}/products`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        timeoutMs: 10000,
+      });
+
+      if (!response.ok) {
+        const handled = await handleAuthErrorResponse(response, dispatch);
+        if (handled) return;
+        throw new Error("A resposta da rede não foi boa");
+      }
+
+      const data: Product[] = await response.json();
+      setProducts(data);
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Erro', 'Falha ao buscar produtos. Verifique sua conexão e o servidor.', [
+        { text: 'OK' },
+        { text: 'Tentar novamente', onPress: fetchProducts },
+      ]);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [dispatch]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchOrders();
+      fetchProducts();
+    }, [fetchOrders, fetchProducts])
+  );
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([fetchOrders(), fetchProducts()]);
+  }, [fetchOrders, fetchProducts]);
+
   const filteredOrders = useMemo(() => {
     const status = isConcludedFilter ? "CONCLUDED" : "PENDING";
     const q = (filterText || "").toString().trim().toLowerCase();
@@ -68,22 +144,147 @@ const OrdersScreen: React.FC = () => {
     setIsModalVisible(true);
   };
 
-  const handleSaveOrder = (order: Order) => {
-    if (order.id) {
-      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
-    } else {
-      const id = orders.length > 0 ? Math.max(...orders.map((o) => o.id ?? 0)) + 1 : 1;
-      const newOrder: Order = {
-        ...order,
-        id,
-        creationDate: new Date().toISOString(),
-        orderStatus: "PENDING",
-      };
-      setOrders((prev) => [...prev, newOrder]);
+  const handleSaveOrder = async (order: Order) => {
+    const customer = (order.customer ?? "").trim();
+    const tableNumber = Number(order.tableNumber ?? 0);
+    const observation = (order.observation ?? "").trim();
+
+    const itemsPayload = (order.items || [])
+      .map((item: any) => {
+        const productId = item.product?.id;
+        const quantity = Number(item.quantity ?? 0);
+        if (productId == null || !Number.isFinite(quantity) || quantity <= 0) return null;
+        return { productId: Number(productId), quantity: Math.trunc(quantity) };
+      })
+      .filter((x): x is { productId: number; quantity: number } => x != null);
+
+    if (!customer) {
+      Alert.alert('Erro', 'Informe o nome do cliente.');
+      return;
     }
-    setIsModalVisible(false);
-    setEditingOrder(null);
+    if (!Number.isFinite(tableNumber) || tableNumber <= 0) {
+      Alert.alert('Erro', 'Número da mesa precisa ser maior que zero.');
+      return;
+    }
+    if (!itemsPayload.length) {
+      Alert.alert('Erro', 'Pedido precisa de pelo menos um item válido.');
+      return;
+    }
+
+    if (!order.id) {
+      setIsLoading(true);
+      try {
+        const token = await getToken();
+        const payload: CreateOrderDTO = {
+          customer,
+          tableNumber,
+          items: itemsPayload,
+          ...(observation ? { observation } : {}),
+        };
+
+        const response = await fetchWithTimeout(`${API_URL}/orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+          timeoutMs: 15000,
+        });
+
+        if (!response.ok) {
+          const handled = await handleAuthErrorResponse(response, dispatch);
+          if (handled) return;
+          const errorData = await response.text();
+          console.error('createOrder failed', { status: response.status, errorData });
+          throw new Error('Falha ao criar o pedido.');
+        }
+
+        setIsModalVisible(false);
+        setEditingOrder(null);
+        fetchOrders();
+        return;
+
+      } catch (e: any) {
+        console.error('createOrder error', e);
+        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao salvar o pedido.'));
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      setIsLoading(true);
+      try {
+        const token = await getToken();
+        const payload: UpdateOrderDTO = {
+          customer,
+          tableNumber,
+          items: itemsPayload,
+          ...(observation ? { observation } : {}),
+        };
+
+        const response = await fetchWithTimeout(`${API_URL}/orders/${order.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+          timeoutMs: 15000,
+        });
+
+        if (!response.ok) {
+          const handled = await handleAuthErrorResponse(response, dispatch);
+          if (handled) return;
+          const errorData = await response.text();
+          console.error('updateOrder failed', { status: response.status, errorData });
+          throw new Error('Falha ao atualizar o pedido.');
+        }
+
+        setIsModalVisible(false);
+        setEditingOrder(null);
+        fetchOrders();
+      } catch (e: any) {
+        console.error('updateOrder error', e);
+        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao atualizar o pedido.'));
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
+
+  const patchOrderStatus = useCallback(
+    async (orderId: number, status: "CANCELED" | "CONCLUDED") => {
+      setIsLoading(true);
+
+      try {
+        const token = await getToken();
+        const statusParam = encodeURIComponent(status);
+        const response = await fetchWithTimeout(`${API_URL}/orders/${orderId}/status?status=${statusParam}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          timeoutMs: 15000,
+        });
+
+        if (!response.ok) {
+          const handled = await handleAuthErrorResponse(response, dispatch);
+          if (handled) return;
+          const errorData = await response.text();
+          console.error('patchOrderStatus failed', { orderId, status, httpStatus: response.status, errorData });
+          throw new Error('Falha ao atualizar o status do pedido.');
+        }
+
+        await fetchOrders();
+      } catch (e: any) {
+        console.error('patchOrderStatus error', e);
+        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao atualizar o status do pedido.'));
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [dispatch, fetchOrders]
+  );
 
   const handleConcludeOrder = (orderId: number) => {
     const order = orders.find((o) => o.id === orderId);
@@ -96,13 +297,7 @@ const OrdersScreen: React.FC = () => {
         { text: "Cancelar", style: "cancel" },
         {
           text: "Confirmar",
-          onPress: () => {
-            setOrders((prev) =>
-              prev.map((o) =>
-                o.id === orderId ? { ...o, orderStatus: "CONCLUDED", concludedDate: new Date().toISOString() } : o
-              )
-            );
-          },
+          onPress: () => patchOrderStatus(orderId, "CONCLUDED"),
         },
       ],
       { cancelable: true }
@@ -115,14 +310,12 @@ const OrdersScreen: React.FC = () => {
 
     Alert.alert(
       "Confirmar cancelamento",
-      `Deseja cancelar o pedido #${orderId}? Esta ação marcará o pedido como "CANCELED".`,
+      `Deseja cancelar o pedido #${orderId}?`,
       [
         { text: "Manter", style: "cancel" },
         {
           text: "Cancelar pedido",
-          onPress: () => {
-            setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, orderStatus: "CANCELED", canceledDate: new Date().toISOString() } : o)));
-          },
+          onPress: () => patchOrderStatus(orderId, "CANCELED"),
           style: "destructive",
         },
       ],
@@ -151,6 +344,7 @@ const OrdersScreen: React.FC = () => {
 
   const renderItem = ({ item }: { item: Order }) => {
     const displayTotal = computeOrderTotal(item);
+    const isActionDisabled = isLoading;
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -158,7 +352,7 @@ const OrdersScreen: React.FC = () => {
             <Text style={styles.customer}>Cliente: {item.customer}</Text>
             <Text style={styles.tableNumber}>Mesa: {item.tableNumber}</Text>
             <Text style={styles.date}>{item.creationDate ? new Date(item.creationDate).toLocaleString() : ''}</Text>
-            {item.observations ? <Text style={styles.obsPreview}>{truncate(item.observations, 80)}</Text> : null}
+            {item.observation ? <Text style={styles.obsPreview}>{truncate(item.observation, 80)}</Text> : null}
           </View>
 
           <View style={styles.statusWrap}>
@@ -180,12 +374,20 @@ const OrdersScreen: React.FC = () => {
 
           {item.orderStatus !== "CONCLUDED" && item.orderStatus !== "CANCELED" && (
             <>
-              <TouchableOpacity style={styles.iconButton} onPress={() => item.id != null && handleConcludeOrder(item.id)}>
+              <TouchableOpacity
+                style={[styles.iconButton, isActionDisabled && styles.iconButtonDisabled]}
+                onPress={() => !isActionDisabled && item.id != null && handleConcludeOrder(item.id)}
+                disabled={isActionDisabled}
+              >
                 <Ionicons name="checkmark-done-outline" size={18} color={THEME.success} />
                 <Text style={[styles.iconLabel, { color: THEME.success }]}>Concluir</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.iconButton} onPress={() => item.id != null && handleCancelOrder(item.id)}>
+              <TouchableOpacity
+                style={[styles.iconButton, isActionDisabled && styles.iconButtonDisabled]}
+                onPress={() => !isActionDisabled && item.id != null && handleCancelOrder(item.id)}
+                disabled={isActionDisabled}
+              >
                 <Ionicons name="close-circle-outline" size={18} color={THEME.danger} />
                 <Text style={[styles.iconLabel, { color: THEME.danger }]}>Cancelar</Text>
               </TouchableOpacity>
@@ -206,7 +408,7 @@ const OrdersScreen: React.FC = () => {
           <Ionicons name="search" size={18} color={THEME.muted} style={{ marginRight: 8 }} />
           <TextInput
             placeholder="Buscar por cliente ou mesa..."
-            placeholderTextColor="#9ca3af"
+            placeholderTextColor={THEME.muted}
             value={filterText}
             onChangeText={setFilterText}
             style={styles.searchInput}
@@ -233,9 +435,16 @@ const OrdersScreen: React.FC = () => {
         data={filteredOrders}
         keyExtractor={(item) => (item.id ?? 0).toString()}
         renderItem={renderItem}
-        ListEmptyComponent={<Text style={styles.emptyText}>Nenhum pedido encontrado</Text>}
+        ListEmptyComponent={!isLoadingAny ? <Text style={styles.emptyText}>Nenhum pedido encontrado</Text> : null}
         contentContainerStyle={{ paddingBottom: 120 }}
+        refreshControl={
+          <RefreshControl refreshing={isLoadingAny} onRefresh={refreshAll} colors={[THEME.primary]} tintColor={THEME.primary} />
+        }
       />
+
+      {isLoadingAny && !orders.length && (
+         <ActivityIndicator size="large" color={THEME.primary} style={StyleSheet.absoluteFill} />
+      )}
 
       <OrderModal
         isVisible={isModalVisible}
@@ -245,13 +454,12 @@ const OrdersScreen: React.FC = () => {
         }}
         onSave={handleSaveOrder}
         initialOrder={editingOrder}
-        products={productsList}
+        products={products}
       />
 
       <TouchableOpacity style={[styles.floatingButton, { backgroundColor: THEME.primary }]} onPress={handleOpenNew}>
         <Text style={styles.floatingButtonText}>+</Text>
       </TouchableOpacity>
-  {/* Bluetooth picker removed */}
     </View>
   );
 };
@@ -275,7 +483,6 @@ export default OrdersScreen;
 const styles = StyleSheet.create({
   container: { flex: 1 },
   title: { fontSize: 24, fontWeight: "700", textAlign: "center", margin: 20, color: "#111827" },
-  /* busca */
   searchRow: {
     paddingHorizontal: 16,
     marginBottom: 8,
@@ -294,6 +501,21 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: "#111827",
+  },
+  errorContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: THEME.danger,
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  retryButton: {
+    color: THEME.primary,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 
   card: {
@@ -345,6 +567,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginRight: 12,
+  },
+  iconButtonDisabled: {
+    opacity: 0.5,
   },
   iconLabel: {
     marginLeft: 6,

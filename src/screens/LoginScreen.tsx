@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { setToken } from '../auth/authSlice';
+import { saveToken } from '../auth/tokenStorage';
+import { API_URL } from '../config/api';
+import THEME from '../styles/theme';
+import colors from '../styles/colors';
 
-const LoginScreen = ({ navigation }: { navigation: any }) => {
+const LoginScreen = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const dispatch = useDispatch();
 
-  const login = async () => {
+  const handleLogin = async () => {
+    if (!username || !password) {
+      Alert.alert("Erro", "Por favor, preencha o usuário e a senha.");
+      return;
+    }
+    setIsLoading(true);
     try {
-     /*const response = await fetch('http://localhost:8080/auth/authenticate', {
+      const response = await fetch(`${API_URL}/auth/authenticate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -22,17 +32,25 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
       });
   
       if (!response.ok) {
-        throw new Error('Erro ao autenticar');
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Credenciais inválidas.');
+        }
+        throw new Error('Erro ao autenticar. Tente novamente mais tarde.');
       }
   
       const token = await response.text();
+
+      if (!token) {
+        throw new Error('Token não recebido do servidor.');
+      }
   
-      */navigation.navigate('Home');
-      //setToken(token);
-      //return token;
-    } catch (error) {
-      console.error('Erro:', error);
-      throw error;
+      await saveToken(token);
+      dispatch(setToken(token));
+
+    } catch (error: any) {
+      Alert.alert('Erro no Login', error.message || 'Ocorreu um erro inesperado.');
+    } finally {
+      setIsLoading(false);
     }
   };  
 
@@ -49,7 +67,7 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
             <TextInput
               style={styles.input}
               placeholder="Username"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={THEME.muted}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
@@ -57,13 +75,17 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
             <TextInput
               style={styles.input}
               placeholder="Password"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={THEME.muted}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
             />
-            <TouchableOpacity onPress={login} style={styles.button}>
-              <Text style={styles.buttonText}>Entrar</Text>
+            <TouchableOpacity onPress={handleLogin} style={[styles.button, isLoading && styles.buttonDisabled]} disabled={isLoading}>
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Entrar</Text>
+              )}
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -88,28 +110,33 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 20,
-    color: '#ed5924ff'
+    color: colors.primary,
   },
   input: {
     width: '100%',
     height: 50,
     borderWidth: 1,
-    borderColor: '#111827',
-    borderRadius: 8,
+    borderColor: THEME.border,
+    borderRadius: 10,
     paddingHorizontal: 10,
     marginBottom: 15,
+    color: THEME.text,
+    backgroundColor: THEME.card,
   },
   button: {
     width: '100%',
     height: 50,
-    backgroundColor: '#ed5924ff',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 8,
   },
+  buttonDisabled: {
+    backgroundColor: '#f9a88c',
+  },
   buttonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });
