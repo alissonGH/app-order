@@ -31,3 +31,15 @@ export interface Order {
   totalValue?: number;
   orderStatus?: string;
 }
+
+export interface Device {
+  id?: number;
+  tenantId?: string;
+  user?: unknown;
+  deviceUid?: string;
+  password?: string;
+  description?: string;
+  createdAt?: string;
+  lastSeenAt?: string;
+  revokedAt?: string;
+}

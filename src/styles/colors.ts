@@ -4,6 +4,7 @@ const colors = {
     textDark: '#000000', // Cor do texto escuro
     background: '#f5f5f5',
     danger: '#ff4d4d', // Cor para ações como logout
+    warning: '#eab308', // Amarelo (avisos)
   };
   
   export default colors;

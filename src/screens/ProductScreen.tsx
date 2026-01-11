@@ -10,6 +10,7 @@ import { API_URL } from '../config/api';
 import { getToken } from '../auth/tokenStorage';
 import { handleAuthErrorResponse } from '../utils/authErrorHandler';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { extractBackendErrorMessage, normalizeMessage } from '../utils/backendErrorMessage';
 
 interface FormState {
   name: string;
@@ -22,15 +23,6 @@ const MAX_DESCRIPTION = 500;
 
 const ProductScreen: React.FC = () => {
   const dispatch = useDispatch();
-
-  const getAlertMessage = (e: any, fallback: string) => {
-    const msg = typeof e?.message === 'string' ? e.message.trim() : '';
-    if (!msg) return fallback;
-    if (msg.length > 120) return fallback;
-    if (msg.includes('\n') || msg.includes('\r')) return fallback;
-    if (/^\d{3}\s*-/.test(msg)) return fallback;
-    return msg;
-  };
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
@@ -60,19 +52,16 @@ const ProductScreen: React.FC = () => {
       });
 
       if (!response.ok) {
+        const backendMsg = await extractBackendErrorMessage(response.clone());
         const handled = await handleAuthErrorResponse(response, dispatch);
-        if (handled) return;
-        throw new Error('A resposta da rede não foi boa');
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao buscar produtos.'));
+        return;
       }
 
       const data: Product[] = await response.json();
       setProducts(data);
     } catch (e: any) {
-      console.error(e);
-      Alert.alert('Erro', 'Falha ao buscar produtos. Verifique sua conexão e o servidor.', [
-        { text: 'OK' },
-        { text: 'Tentar novamente', onPress: fetchProducts },
-      ]);
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao buscar produtos.');
     } finally {
       setIsLoadingProducts(false);
     }
@@ -90,19 +79,16 @@ const ProductScreen: React.FC = () => {
       });
 
       if (!response.ok) {
+        const backendMsg = await extractBackendErrorMessage(response.clone());
         const handled = await handleAuthErrorResponse(response, dispatch);
-        if (handled) return;
-        throw new Error('A resposta da rede não foi boa');
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao buscar categorias.'));
+        return;
       }
 
       const data: Category[] = await response.json();
       setCategories(data);
     } catch (e: any) {
-      console.error(e);
-      Alert.alert('Erro', 'Falha ao buscar categorias. Verifique sua conexão e o servidor.', [
-        { text: 'OK' },
-        { text: 'Tentar novamente', onPress: fetchCategories },
-      ]);
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao buscar categorias.');
     } finally {
       setIsLoadingCategories(false);
     }
@@ -123,23 +109,15 @@ const ProductScreen: React.FC = () => {
         });
 
         if (!response.ok) {
+          const backendMsg = await extractBackendErrorMessage(response.clone());
           const handled = await handleAuthErrorResponse(response, dispatch);
-          if (handled) return;
-
-          if (response.status === 409) {
-            // não exibir resposta crua do backend
-            throw new Error('Produto já está desativado.');
-          }
-
-          const errorText = await response.text();
-          console.error('deactivateProduct failed', { productId, status: response.status, errorText });
-          throw new Error('Falha ao desativar o produto.');
+          Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao desativar o produto.'));
+          return;
         }
 
         await fetchProducts();
       } catch (e: any) {
-        console.error(e);
-        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao desativar o produto.'));
+        Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao desativar o produto.');
       } finally {
         setIsMutating(false);
       }
@@ -219,11 +197,10 @@ const ProductScreen: React.FC = () => {
       });
 
       if (!response.ok) {
+        const backendMsg = await extractBackendErrorMessage(response.clone());
         const handled = await handleAuthErrorResponse(response, dispatch);
-        if (handled) return;
-        const errorText = await response.text();
-        console.error('saveProduct failed', { method: isEdit ? 'PUT' : 'POST', status: response.status, errorText });
-        throw new Error(isEdit ? 'Falha ao atualizar o produto.' : 'Falha ao criar o produto.');
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : isEdit ? 'Falha ao atualizar o produto.' : 'Falha ao criar o produto.'));
+        return;
       }
 
       setModalVisible(false);
@@ -231,8 +208,7 @@ const ProductScreen: React.FC = () => {
       setEditingProduct(null);
       await fetchProducts();
     } catch (e: any) {
-      console.error(e);
-      Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao salvar o produto.'));
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao salvar o produto.');
     } finally {
       setIsMutating(false);
     }

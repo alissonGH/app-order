@@ -17,12 +17,32 @@ import { useDispatch } from "react-redux";
 import OrderModal from "../components/OrderModal";
 import printOrder from "../utils/printer";
 import { THEME } from "../styles/theme";
+import colors from "../styles/colors";
 import { API_URL } from "../config/api";
 import { Order, Product } from "../types/models";
 import { CreateOrderDTO, UpdateOrderDTO } from "../types/orderDtos";
 import { getToken } from "../auth/tokenStorage";
 import { handleAuthErrorResponse } from "../utils/authErrorHandler";
 import { fetchWithTimeout } from "../utils/fetchWithTimeout";
+import { extractBackendErrorMessage, normalizeMessage } from "../utils/backendErrorMessage";
+
+type EOrderStatus = 'PENDING' | 'IN_PREPARING' | 'PREPARED' | 'CANCELED' | 'CONCLUDED';
+
+const STATUS_LABELS_PT: Record<EOrderStatus, string> = {
+  PENDING: 'Pendente',
+  IN_PREPARING: 'Em preparação',
+  PREPARED: 'Pronto',
+  CANCELED: 'Cancelado',
+  CONCLUDED: 'Concluído',
+};
+
+const STATUS_COLORS: Record<EOrderStatus, string> = {
+  PENDING: colors.primary,
+  IN_PREPARING: colors.warning,
+  PREPARED: THEME.primary,
+  CANCELED: THEME.danger,
+  CONCLUDED: THEME.success,
+};
 
 const truncate = (str: string | undefined, n: number) => {
   if (!str) return "";
@@ -31,15 +51,6 @@ const truncate = (str: string | undefined, n: number) => {
 
 const OrdersScreen: React.FC = () => {
   const dispatch = useDispatch();
-
-  const getAlertMessage = (e: any, fallback: string) => {
-    const msg = typeof e?.message === 'string' ? e.message.trim() : '';
-    if (!msg) return fallback;
-    if (msg.length > 120) return fallback;
-    if (msg.includes('\n') || msg.includes('\r')) return fallback;
-    if (/^\d{3}\s*-/.test(msg)) return fallback;
-    return msg;
-  };
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -48,6 +59,8 @@ const OrdersScreen: React.FC = () => {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [isConcludedFilter, setIsConcludedFilter] = useState<boolean>(false);
   const [filterText, setFilterText] = useState<string>("");
+
+  const [openStatusMenuId, setOpenStatusMenuId] = useState<number | null>(null);
 
   const isLoadingAny = isLoading || isLoadingProducts;
 
@@ -62,18 +75,15 @@ const OrdersScreen: React.FC = () => {
         timeoutMs: 10000,
       });
       if (!response.ok) {
+        const backendMsg = await extractBackendErrorMessage(response.clone());
         const handled = await handleAuthErrorResponse(response, dispatch);
-        if (handled) return;
-        throw new Error("A resposta da rede não foi boa");
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao buscar pedidos.'));
+        return;
       }
       const data: Order[] = await response.json();
       setOrders(data);
     } catch (e: any) {
-      console.error(e);
-      Alert.alert('Erro', 'Falha ao buscar pedidos. Verifique sua conexão e o servidor.', [
-        { text: 'OK' },
-        { text: 'Tentar novamente', onPress: fetchOrders },
-      ]);
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao buscar pedidos.');
     } finally {
       setIsLoading(false);
     }
@@ -91,19 +101,16 @@ const OrdersScreen: React.FC = () => {
       });
 
       if (!response.ok) {
+        const backendMsg = await extractBackendErrorMessage(response.clone());
         const handled = await handleAuthErrorResponse(response, dispatch);
-        if (handled) return;
-        throw new Error("A resposta da rede não foi boa");
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao buscar produtos.'));
+        return;
       }
 
       const data: Product[] = await response.json();
       setProducts(data);
     } catch (e: any) {
-      console.error(e);
-      Alert.alert('Erro', 'Falha ao buscar produtos. Verifique sua conexão e o servidor.', [
-        { text: 'OK' },
-        { text: 'Tentar novamente', onPress: fetchProducts },
-      ]);
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao buscar produtos.');
     } finally {
       setIsLoadingProducts(false);
     }
@@ -121,11 +128,11 @@ const OrdersScreen: React.FC = () => {
   }, [fetchOrders, fetchProducts]);
 
   const filteredOrders = useMemo(() => {
-    const status = isConcludedFilter ? "CONCLUDED" : "PENDING";
+    const status = isConcludedFilter ? "CONCLUDED" : null;
     const q = (filterText || "").toString().trim().toLowerCase();
 
     return orders
-      .filter((order) => order.orderStatus === status)
+      .filter((order) => (status ? order.orderStatus === status : order.orderStatus !== 'CONCLUDED'))
       .filter((order) => {
         if (!q) return true;
         const customer = (order.customer || "").toString().toLowerCase();
@@ -193,11 +200,10 @@ const OrdersScreen: React.FC = () => {
         });
 
         if (!response.ok) {
+          const backendMsg = await extractBackendErrorMessage(response.clone());
           const handled = await handleAuthErrorResponse(response, dispatch);
-          if (handled) return;
-          const errorData = await response.text();
-          console.error('createOrder failed', { status: response.status, errorData });
-          throw new Error('Falha ao criar o pedido.');
+          Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao criar o pedido.'));
+          return;
         }
 
         setIsModalVisible(false);
@@ -206,8 +212,7 @@ const OrdersScreen: React.FC = () => {
         return;
 
       } catch (e: any) {
-        console.error('createOrder error', e);
-        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao salvar o pedido.'));
+        Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao salvar o pedido.');
       } finally {
         setIsLoading(false);
       }
@@ -233,19 +238,17 @@ const OrdersScreen: React.FC = () => {
         });
 
         if (!response.ok) {
+          const backendMsg = await extractBackendErrorMessage(response.clone());
           const handled = await handleAuthErrorResponse(response, dispatch);
-          if (handled) return;
-          const errorData = await response.text();
-          console.error('updateOrder failed', { status: response.status, errorData });
-          throw new Error('Falha ao atualizar o pedido.');
+          Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao atualizar o pedido.'));
+          return;
         }
 
         setIsModalVisible(false);
         setEditingOrder(null);
         fetchOrders();
       } catch (e: any) {
-        console.error('updateOrder error', e);
-        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao atualizar o pedido.'));
+        Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao atualizar o pedido.');
       } finally {
         setIsLoading(false);
       }
@@ -253,7 +256,7 @@ const OrdersScreen: React.FC = () => {
   };
 
   const patchOrderStatus = useCallback(
-    async (orderId: number, status: "CANCELED" | "CONCLUDED") => {
+    async (orderId: number, status: EOrderStatus) => {
       setIsLoading(true);
 
       try {
@@ -268,17 +271,26 @@ const OrdersScreen: React.FC = () => {
         });
 
         if (!response.ok) {
+          const backendMsg = await extractBackendErrorMessage(response.clone());
           const handled = await handleAuthErrorResponse(response, dispatch);
-          if (handled) return;
-          const errorData = await response.text();
-          console.error('patchOrderStatus failed', { orderId, status, httpStatus: response.status, errorData });
-          throw new Error('Falha ao atualizar o status do pedido.');
+          Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao atualizar o status do pedido.'));
+          return;
         }
 
-        await fetchOrders();
+        let updated: Order | null = null;
+        try {
+          updated = (await response.json()) as Order;
+        } catch {
+          updated = null;
+        }
+
+        if (updated && updated.id != null) {
+          setOrders((prev) => prev.map((o) => (o.id === updated!.id ? { ...o, ...updated! } : o)));
+        } else {
+          await fetchOrders();
+        }
       } catch (e: any) {
-        console.error('patchOrderStatus error', e);
-        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao atualizar o status do pedido.'));
+        Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao atualizar o status do pedido.');
       } finally {
         setIsLoading(false);
       }
@@ -286,37 +298,15 @@ const OrdersScreen: React.FC = () => {
     [dispatch, fetchOrders]
   );
 
-  const handleConcludeOrder = (orderId: number) => {
-    const order = orders.find((o) => o.id === orderId);
-    if (!order) return;
-
+  const confirmChangeStatus = (orderId: number, nextStatus: EOrderStatus) => {
     Alert.alert(
-      "Confirmar conclusão",
-      `Deseja marcar o pedido #${orderId} como concluído?`,
+      'Confirmar alteração',
+      'Deseja realmente alterar o status do pedido?',
       [
-        { text: "Cancelar", style: "cancel" },
+        { text: 'Cancelar', style: 'cancel' },
         {
-          text: "Confirmar",
-          onPress: () => patchOrderStatus(orderId, "CONCLUDED"),
-        },
-      ],
-      { cancelable: true }
-    );
-  };
-
-  const handleCancelOrder = (orderId: number) => {
-    const order = orders.find((o) => o.id === orderId);
-    if (!order) return;
-
-    Alert.alert(
-      "Confirmar cancelamento",
-      `Deseja cancelar o pedido #${orderId}?`,
-      [
-        { text: "Manter", style: "cancel" },
-        {
-          text: "Cancelar pedido",
-          onPress: () => patchOrderStatus(orderId, "CANCELED"),
-          style: "destructive",
+          text: 'Confirmar',
+          onPress: () => patchOrderStatus(orderId, nextStatus),
         },
       ],
       { cancelable: true }
@@ -325,7 +315,6 @@ const OrdersScreen: React.FC = () => {
 
   const handlePrintFromList = async (order: Order) => {
     const res = await printOrder(order);
-    console.log("Resultado da impressão:", res);
     if (res.success) {
       Alert.alert("Impressão", "Pedido enviado para a impressora com sucesso.");
     } else {
@@ -345,6 +334,12 @@ const OrdersScreen: React.FC = () => {
   const renderItem = ({ item }: { item: Order }) => {
     const displayTotal = computeOrderTotal(item);
     const isActionDisabled = isLoading;
+    const status = (item.orderStatus || 'PENDING') as EOrderStatus;
+    const isFinalStatus = status === 'CONCLUDED' || status === 'CANCELED';
+    const menuOpen = item.id != null && openStatusMenuId === item.id;
+
+    const statusOptions = (Object.keys(STATUS_LABELS_PT) as EOrderStatus[]).filter((s) => s !== status);
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -367,33 +362,54 @@ const OrdersScreen: React.FC = () => {
               <Text style={styles.iconLabel}>Imprimir</Text>
             </TouchableOpacity>
 
-          <TouchableOpacity style={styles.iconButton} onPress={() => handleOpenEdit(item)}>
-            <Ionicons name="create-outline" size={18} color={THEME.primary} />
-            <Text style={[styles.iconLabel, { color: THEME.primary }]}>Editar</Text>
-          </TouchableOpacity>
-
-          {item.orderStatus !== "CONCLUDED" && item.orderStatus !== "CANCELED" && (
+          {!isFinalStatus && (
             <>
-              <TouchableOpacity
-                style={[styles.iconButton, isActionDisabled && styles.iconButtonDisabled]}
-                onPress={() => !isActionDisabled && item.id != null && handleConcludeOrder(item.id)}
-                disabled={isActionDisabled}
-              >
-                <Ionicons name="checkmark-done-outline" size={18} color={THEME.success} />
-                <Text style={[styles.iconLabel, { color: THEME.success }]}>Concluir</Text>
+              <TouchableOpacity style={styles.iconButton} onPress={() => handleOpenEdit(item)}>
+                <Ionicons name="create-outline" size={18} color={THEME.primary} />
+                <Text style={[styles.iconLabel, { color: THEME.primary }]}>Editar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.iconButton, isActionDisabled && styles.iconButtonDisabled]}
-                onPress={() => !isActionDisabled && item.id != null && handleCancelOrder(item.id)}
+                onPress={() => {
+                  if (isActionDisabled || item.id == null) return;
+                  setOpenStatusMenuId((prev) => (prev === item.id ? null : item.id!));
+                }}
                 disabled={isActionDisabled}
               >
-                <Ionicons name="close-circle-outline" size={18} color={THEME.danger} />
-                <Text style={[styles.iconLabel, { color: THEME.danger }]}>Cancelar</Text>
+                <Ionicons name="swap-vertical" size={18} color={THEME.muted} />
+                <Text style={styles.iconLabel}>Status</Text>
               </TouchableOpacity>
             </>
           )}
         </View>
+
+        {menuOpen && !isFinalStatus && (
+          <View style={styles.statusMenuWrap}>
+            {statusOptions.map((s, idx) => {
+              const isLast = idx === statusOptions.length - 1;
+              const label = STATUS_LABELS_PT[s];
+              const statusColor = STATUS_COLORS[s];
+
+              return (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.statusMenuItem, isLast && styles.statusMenuItemLast]}
+                  onPress={() => {
+                    if (item.id == null) return;
+                    setOpenStatusMenuId(null);
+                    confirmChangeStatus(item.id, s);
+                  }}
+                >
+                  <View style={styles.statusMenuItemContent}>
+                    <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+                    <Text style={[styles.statusMenuItemText, { color: statusColor }]}>{label}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </View>
     );
   };
@@ -469,6 +485,10 @@ const translateStatus = (s?: string | null) => {
   switch (s) {
     case "CONCLUDED":
       return "Concluído";
+    case "IN_PREPARING":
+      return "Em preparação";
+    case "PREPARED":
+      return "Pronto";
     case "PENDING":
       return "Pendente";
     case "CANCELED":
@@ -560,7 +580,7 @@ const styles = StyleSheet.create({
 
   actionsRow: {
     flexDirection: "row",
-    justifyContent: "flex-start",
+    justifyContent: "flex-end",
     marginTop: 10,
   },
   iconButton: {
@@ -575,6 +595,40 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     fontSize: 13,
     color: "#374151",
+  },
+
+  statusMenuWrap: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: THEME.card,
+  },
+  statusMenuItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.border,
+  },
+  statusMenuItemLast: {
+    borderBottomWidth: 0,
+  },
+  statusMenuItemText: {
+    color: THEME.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  statusMenuItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
   },
 
   viewModalOverlay: {

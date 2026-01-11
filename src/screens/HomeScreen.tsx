@@ -6,6 +6,7 @@ import { API_URL } from '../config/api';
 import { getToken } from '../auth/tokenStorage';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { handleAuthErrorResponse } from '../utils/authErrorHandler';
+import { extractBackendErrorMessage, normalizeMessage } from '../utils/backendErrorMessage';
 
 const { width } = Dimensions.get('window');
 
@@ -115,11 +116,9 @@ export default function HomeScreen() {
     });
 
     if (!response.ok) {
+      const backendMsg = await extractBackendErrorMessage(response.clone());
       const handled = await handleAuthErrorResponse(response, dispatch);
-      if (handled) return;
-      const errorText = await response.text();
-      console.error('orders-by-hour failed', { status: response.status, errorText });
-      throw new Error('Falha ao carregar pedidos por hora.');
+      throw new Error(backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao carregar pedidos por hora.'));
     }
 
     const data = (await response.json()) as OrdersByHourApiResponse;
@@ -153,11 +152,9 @@ export default function HomeScreen() {
     });
 
     if (!response.ok) {
+      const backendMsg = await extractBackendErrorMessage(response.clone());
       const handled = await handleAuthErrorResponse(response, dispatch);
-      if (handled) return;
-      const errorText = await response.text();
-      console.error('top-products failed', { status: response.status, errorText });
-      throw new Error('Falha ao carregar top produtos.');
+      throw new Error(backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao carregar top produtos.'));
     }
 
     const data = (await response.json()) as TopProductsApiResponse;
@@ -173,8 +170,7 @@ export default function HomeScreen() {
     try {
       await Promise.all([fetchOrdersByHour(), fetchTopProducts()]);
     } catch (e: any) {
-      console.error('refreshDashboard error', e);
-      Alert.alert('Erro', e?.message || 'Falha ao carregar dados do dashboard.');
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao carregar dados do dashboard.');
     }
   }, [fetchOrdersByHour, fetchTopProducts]);
 

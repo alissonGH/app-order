@@ -25,6 +25,7 @@ import { API_URL } from '../config/api';
 import { getToken } from '../auth/tokenStorage';
 import { handleAuthErrorResponse } from '../utils/authErrorHandler';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { extractBackendErrorMessage, normalizeMessage } from '../utils/backendErrorMessage';
 
 interface FormState {
   name: string;
@@ -32,15 +33,6 @@ interface FormState {
 
 const CategoryScreen: React.FC = () => {
   const dispatch = useDispatch();
-
-  const getAlertMessage = (e: any, fallback: string) => {
-    const msg = typeof e?.message === 'string' ? e.message.trim() : '';
-    if (!msg) return fallback;
-    if (msg.length > 120) return fallback;
-    if (msg.includes('\n') || msg.includes('\r')) return fallback;
-    if (/^\d{3}\s*-/.test(msg)) return fallback;
-    return msg;
-  };
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,19 +55,16 @@ const CategoryScreen: React.FC = () => {
       });
 
       if (!response.ok) {
+        const backendMsg = await extractBackendErrorMessage(response.clone());
         const handled = await handleAuthErrorResponse(response, dispatch);
-        if (handled) return;
-        throw new Error('A resposta da rede não foi boa');
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao buscar categorias.'));
+        return;
       }
 
       const data: Category[] = await response.json();
       setCategories(data);
     } catch (e: any) {
-      console.error(e);
-      Alert.alert('Erro', 'Falha ao buscar categorias. Verifique sua conexão e o servidor.', [
-        { text: 'OK' },
-        { text: 'Tentar novamente', onPress: fetchCategories },
-      ]);
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao buscar categorias.');
     } finally {
       setIsLoading(false);
     }
@@ -102,23 +91,15 @@ const CategoryScreen: React.FC = () => {
         });
 
         if (!response.ok) {
+          const backendMsg = await extractBackendErrorMessage(response.clone());
           const handled = await handleAuthErrorResponse(response, dispatch);
-          if (handled) return;
-
-          if (response.status === 409) {
-            // não exibir resposta crua do backend
-            throw new Error('Categoria já está desativada.');
-          }
-
-          const errorText = await response.text();
-          console.error('deactivateCategory failed', { categoryId, status: response.status, errorText });
-          throw new Error('Falha ao desativar a categoria.');
+          Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao desativar a categoria.'));
+          return;
         }
 
         await fetchCategories();
       } catch (e: any) {
-        console.error(e);
-        Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao desativar a categoria.'));
+        Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao desativar a categoria.');
       } finally {
         setIsMutating(false);
       }
@@ -161,11 +142,10 @@ const CategoryScreen: React.FC = () => {
       });
 
       if (!response.ok) {
+        const backendMsg = await extractBackendErrorMessage(response.clone());
         const handled = await handleAuthErrorResponse(response, dispatch);
-        if (handled) return;
-        const errorText = await response.text();
-        console.error('saveCategory failed', { method: isEdit ? 'PUT' : 'POST', status: response.status, errorText });
-        throw new Error(isEdit ? 'Falha ao atualizar a categoria.' : 'Falha ao criar a categoria.');
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : isEdit ? 'Falha ao atualizar a categoria.' : 'Falha ao criar a categoria.'));
+        return;
       }
 
       setModalVisible(false);
@@ -173,8 +153,7 @@ const CategoryScreen: React.FC = () => {
       setEditingCategory(null);
       await fetchCategories();
     } catch (e: any) {
-      console.error(e);
-      Alert.alert('Erro', getAlertMessage(e, 'Ocorreu um erro ao salvar a categoria.'));
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao salvar a categoria.');
     } finally {
       setIsMutating(false);
     }

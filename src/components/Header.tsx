@@ -1,24 +1,103 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { useDispatch } from 'react-redux';
+import React, { useMemo, useRef, useState } from 'react';
+import { Animated, Modal, PanResponder, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
 import colors from '../styles/colors';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { clearToken } from '../auth/authSlice';
-import { deleteToken, getToken } from '../auth/tokenStorage';
+import { clearToken, selectAuthKind } from '../auth/authSlice';
+import { deleteToken, getToken, removeAuthKind } from '../auth/tokenStorage';
 import { API_URL } from '../config/api';
+import THEME from '../styles/theme';
 
 const Header = ({ navigation, route }: { navigation: any; route: any }) => {
-  const [expanded, setExpanded] = useState(false);
+  const { width } = useWindowDimensions();
+  const drawerWidth = Math.min(320, Math.floor(width * 0.82));
+
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const translateX = useRef(new Animated.Value(-drawerWidth)).current;
+
   const dispatch = useDispatch();
+  const authKind = useSelector(selectAuthKind);
+
+  const menuItems = useMemo(() => {
+    if (authKind === 'device') {
+      return [
+        { key: 'Orders', label: 'Pedidos', icon: 'clipboard-list' },
+      ];
+    }
+
+    return [
+      { key: 'Profile', label: 'Perfil', icon: 'account-circle-outline' },
+      { key: 'Orders', label: 'Pedidos', icon: 'clipboard-list' },
+      { key: 'Products', label: 'Produtos', icon: 'package-variant' },
+      { key: 'Categories', label: 'Categorias', icon: 'shape' },
+      { key: 'Devices', label: 'Dispositivos', icon: 'cellphone-link' },
+    ];
+  }, [authKind]);
+
+  const openDrawer = () => {
+    translateX.setValue(-drawerWidth);
+    setDrawerVisible(true);
+    Animated.timing(translateX, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeDrawer = () => {
+    Animated.timing(translateX, {
+      toValue: -drawerWidth,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setDrawerVisible(false);
+    });
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, gesture) => {
+        // Captura apenas gesto horizontal consistente
+        const dx = Math.abs(gesture.dx);
+        const dy = Math.abs(gesture.dy);
+        return dx > 12 && dx > dy;
+      },
+      onPanResponderMove: (_evt, gesture) => {
+        // Drawer abre da esquerda, então fechamos arrastando para a esquerda (dx negativo)
+        const next = Math.min(0, Math.max(-drawerWidth, gesture.dx));
+        translateX.setValue(next);
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        const shouldClose = gesture.dx < -drawerWidth * 0.35 || gesture.vx < -0.6;
+        if (shouldClose) {
+          closeDrawer();
+          return;
+        }
+
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 160,
+          useNativeDriver: true,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 160,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
 
   const handleLogout = async () => {
     try {
       const token = await getToken();
       if (token) {
-        await fetch(`${API_URL}/auth/logout`, {
+        const url = authKind === 'device' ? `${API_URL}/auth/device/logout` : `${API_URL}/auth/logout`;
+        await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
           },
           body: '',
@@ -27,6 +106,7 @@ const Header = ({ navigation, route }: { navigation: any; route: any }) => {
     } catch (error) {
     } finally {
       await deleteToken();
+      await removeAuthKind();
       dispatch(clearToken());
     }
   };
@@ -34,7 +114,7 @@ const Header = ({ navigation, route }: { navigation: any; route: any }) => {
   const isLoginScreen = route.name === 'Login';
 
   const handleNavigateHome = () => {
-    navigation.navigate('Home');
+    navigation.navigate(authKind === 'device' ? 'Orders' : 'Home');
   };
   
   if (isLoginScreen) return null;
@@ -42,37 +122,77 @@ const Header = ({ navigation, route }: { navigation: any; route: any }) => {
   return (
     <View>
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
-        <TouchableOpacity onPress={() => setExpanded((s) => !s)} style={styles.menuButton}>
-          <Icon name={expanded ? 'menu-open' : 'menu'} size={28} color="#fff" />
+        <TouchableOpacity onPress={openDrawer} style={styles.menuButton}>
+          <Icon name="menu" size={28} color="#fff" />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={handleNavigateHome} style={styles.titleWrap}>
           <Text style={styles.title}>Serviço de Pedidos</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={handleLogout}>
-          <Icon name="logout" size={26} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.rightSpacer} />
       </View>
 
-      {expanded && (
-        <View style={styles.expandedMenu}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => { setExpanded(false); navigation.navigate('Orders'); }}>
-            <Icon name="clipboard-list" size={20} color={colors.textLight} />
-            <Text style={styles.menuItemText}>Pedidos</Text>
-          </TouchableOpacity>
+      <Modal
+        visible={drawerVisible}
+        transparent
+        animationType="none"
+        onRequestClose={closeDrawer}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.scrim} onPress={closeDrawer} />
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => { setExpanded(false); navigation.navigate('Products'); }}>
-            <Icon name="package-variant" size={20} color={colors.textLight} />
-            <Text style={styles.menuItemText}>Produtos</Text>
-          </TouchableOpacity>
+          <Animated.View
+            style={[
+              styles.drawer,
+              {
+                width: drawerWidth,
+                transform: [{ translateX }],
+              },
+            ]}
+            {...panResponder.panHandlers}
+          >
+            <View style={styles.drawerHeader}>
+              <Text style={styles.drawerTitle}>Menu</Text>
+              <TouchableOpacity onPress={closeDrawer} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Icon name="close" size={22} color={THEME.muted} />
+              </TouchableOpacity>
+            </View>
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => { setExpanded(false); navigation.navigate('Categories'); }}>
-            <Icon name="shape" size={20} color={colors.textLight} />
-            <Text style={styles.menuItemText}>Categorias</Text>
-          </TouchableOpacity>
+            <View style={styles.drawerBody}>
+              {menuItems.map((item) => {
+                const isActive = route?.name === item.key;
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[styles.drawerItem, isActive && styles.drawerItemActive]}
+                    onPress={() => {
+                      closeDrawer();
+                      navigation.navigate(item.key);
+                    }}
+                  >
+                    <Icon name={item.icon} size={20} color={isActive ? colors.primary : THEME.muted} />
+                    <Text style={[styles.drawerItemText, isActive && styles.drawerItemTextActive]}>{item.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.drawerFooter}>
+              <TouchableOpacity
+                style={styles.drawerLogout}
+                onPress={async () => {
+                  closeDrawer();
+                  await handleLogout();
+                }}
+              >
+                <Icon name="logout" size={20} color={colors.danger} />
+                <Text style={styles.drawerLogoutText}>Sair</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
         </View>
-      )}
+      </Modal>
     </View>
   );
 };
@@ -104,24 +224,87 @@ const styles = StyleSheet.create({
   menuButton: {
     padding: 5,
   },
+  rightSpacer: {
+    width: 34,
+  },
   titleWrap: {
     flex: 1,
     alignItems: 'center',
   },
-  expandedMenu: {
-    backgroundColor: colors.primary,
-    paddingVertical: 8,
+
+  modalRoot: {
+    flex: 1,
+    flexDirection: 'row',
   },
-  menuItem: {
+  scrim: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.55)',
+  },
+  drawer: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: THEME.card,
+    borderRightWidth: 1,
+    borderRightColor: THEME.border,
+  },
+  drawerHeader: {
+    height: 64,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.border,
   },
-  menuItemText: {
-    color: colors.textLight,
-    fontSize: 16,
+  drawerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: THEME.text,
+  },
+  drawerBody: {
+    flex: 1,
+    paddingTop: 10,
+    paddingHorizontal: 10,
+  },
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    marginBottom: 6,
+  },
+  drawerItemActive: {
+    backgroundColor: THEME.border,
+  },
+  drawerItemText: {
     marginLeft: 12,
+    fontSize: 16,
+    color: THEME.text,
+    fontWeight: '600',
+  },
+  drawerItemTextActive: {
+    color: colors.primary,
+  },
+  drawerFooter: {
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: THEME.border,
+  },
+  drawerLogout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  drawerLogoutText: {
+    marginLeft: 12,
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.danger,
   },
 });
 
