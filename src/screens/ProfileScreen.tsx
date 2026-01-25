@@ -30,6 +30,15 @@ type UserDto = Record<string, any> & {
   email?: string;
 };
 
+function isInvalidCurrentPasswordError(message: string | null | undefined): boolean {
+  if (!message) return false;
+  const msg = message.toLowerCase();
+  if (/credenciais\s+inv[áa]lidas?/.test(msg)) return true;
+  const hasCurrentPassword = /senha\s+atual/.test(msg);
+  const saysInvalid = /(inv[áa]lid)|((n[ãa]o)\s*(é|e)\s*v[áa]lid)/.test(msg);
+  return hasCurrentPassword && saysInvalid;
+}
+
 function toIdNumber(id: unknown): number | null {
   if (typeof id === 'number' && Number.isFinite(id)) return id;
   if (typeof id === 'string') {
@@ -47,8 +56,13 @@ const ProfileScreen: React.FC = () => {
   const [isMutating, setIsMutating] = useState(false);
 
   const [editVisible, setEditVisible] = useState(false);
-  const [editEmail, setEditEmail] = useState('');
+  const [editCurrentPassword, setEditCurrentPassword] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editConfirmPassword, setEditConfirmPassword] = useState('');
+
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const userId = useMemo(() => toIdNumber(user?.id), [user]);
 
@@ -123,8 +137,12 @@ const ProfileScreen: React.FC = () => {
   );
 
   const openEdit = () => {
-    setEditEmail((user?.email || '').toString());
+    setEditCurrentPassword('');
     setEditPassword('');
+    setEditConfirmPassword('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
     setEditVisible(true);
   };
 
@@ -140,11 +158,17 @@ const ProfileScreen: React.FC = () => {
       return;
     }
 
-    const email = (editEmail || '').toString().trim();
+    const currentPassword = (editCurrentPassword || '').toString();
     const password = (editPassword || '').toString();
+    const confirmPassword = (editConfirmPassword || '').toString();
 
-    if (!email) {
-      Alert.alert('Erro', 'Email é obrigatório.');
+    if (!currentPassword) {
+      Alert.alert('Erro', 'Senha atual é obrigatória.');
+      return;
+    }
+
+    if ((currentPassword || '').length < 6) {
+      Alert.alert('Erro', 'Senha deve ter no mínimo 6 caracteres.');
       return;
     }
 
@@ -153,19 +177,34 @@ const ProfileScreen: React.FC = () => {
       return;
     }
 
+    if ((password || '').length < 6) {
+      Alert.alert('Erro', 'Senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (!confirmPassword) {
+      Alert.alert('Erro', 'Confirme a nova senha.');
+      return;
+    }
+
+    if ((confirmPassword || '').length < 6) {
+      Alert.alert('Erro', 'Senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Erro', 'Confirmação de senha diferente da nova senha.');
+      return;
+    }
+
     setIsMutating(true);
     try {
       const token = await getToken();
 
-      // Preserva o objeto original para não quebrar validações do backend
-      const payload: any = {
-        id,
-        email,
-        password,
-      };
+      const payload: any = { currentPassword, password };
 
-      const res = await fetchWithTimeout(`${API_URL}/users/${id}`, {
-        method: 'PUT',
+      const res = await fetchWithTimeout(`${API_URL}/users/${id}/password`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
@@ -176,16 +215,23 @@ const ProfileScreen: React.FC = () => {
 
       if (!res.ok) {
         const backendMsg = await extractBackendErrorMessage(res.clone());
+
+        if (isInvalidCurrentPasswordError(backendMsg)) {
+          Alert.alert('Erro', backendMsg);
+          return;
+        }
+
         const handled = await handleAuthErrorResponse(res, dispatch);
-        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao atualizar usuário.'));
+        Alert.alert('Erro', backendMsg ?? (handled ? 'Sessão expirada.' : 'Falha ao alterar a senha.'));
         return;
       }
 
       const updated = (await res.json()) as UserDto;
-      setUser(updated);
+      setUser((prev) => ({ ...(prev || {}), ...(updated || {}) }));
       closeEdit();
+      Alert.alert('Sucesso', 'Senha alterada com sucesso.');
     } catch (e: any) {
-      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao atualizar o usuário.');
+      Alert.alert('Erro', normalizeMessage(e) ?? 'Falha ao alterar a senha.');
     } finally {
       setIsMutating(false);
     }
@@ -203,17 +249,12 @@ const ProfileScreen: React.FC = () => {
           <ActivityIndicator size="large" color={THEME.primary} style={{ marginTop: 24 }} />
         ) : (
           <View style={styles.card}>
-            <Text style={styles.label}>ID</Text>
-            <Text style={styles.value}>{userId != null ? String(userId) : '-'}</Text>
-
-            <View style={styles.divider} />
-
             <Text style={styles.label}>Email</Text>
             <Text style={styles.value}>{(user?.email || '-').toString()}</Text>
 
             {user && (
               <TouchableOpacity style={[styles.button, isMutating && styles.buttonDisabled]} onPress={openEdit} disabled={isMutating}>
-                <Text style={styles.buttonText}>Alterar usuário</Text>
+                <Text style={styles.buttonText}>Alterar senha</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -233,29 +274,73 @@ const ProfileScreen: React.FC = () => {
             </TouchableOpacity>
 
             <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalTitle}>Alterar usuário</Text>
+              <Text style={styles.modalTitle}>Alterar senha</Text>
 
-              <TextInput
-                style={styles.input}
-                placeholder="Email"
-                value={editEmail}
-                onChangeText={setEditEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                textContentType="emailAddress"
-                autoComplete="email"
-              />
+              <View style={styles.passwordFieldWrap}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  placeholder="Senha atual"
+                  value={editCurrentPassword}
+                  onChangeText={setEditCurrentPassword}
+                  secureTextEntry={!showCurrentPassword}
+                  textContentType="password"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowCurrentPassword((v) => !v)}
+                  accessibilityLabel={showCurrentPassword ? 'Ocultar senha atual' : 'Exibir senha atual'}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name={showCurrentPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
+                </TouchableOpacity>
+              </View>
 
-              <TextInput
-                style={styles.input}
-                placeholder="Senha"
-                value={editPassword}
-                onChangeText={setEditPassword}
-                secureTextEntry
-                textContentType="password"
-              />
+              <View style={styles.passwordFieldWrap}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput, styles.passwordInputBase]}
+                  placeholder="Nova senha"
+                  value={editPassword}
+                  onChangeText={setEditPassword}
+                  secureTextEntry={!showNewPassword}
+                  textContentType="newPassword"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowNewPassword((v) => !v)}
+                  accessibilityLabel={showNewPassword ? 'Ocultar nova senha' : 'Exibir nova senha'}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name={showNewPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
+                </TouchableOpacity>
+              </View>
 
-              <TouchableOpacity style={[styles.saveButton, isMutating && styles.buttonDisabled]} onPress={saveEdit} disabled={isMutating}>
+              <View style={styles.passwordFieldWrap}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput, styles.passwordInputBase]}
+                  placeholder="Confirme a nova senha"
+                  value={editConfirmPassword}
+                  onChangeText={setEditConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                  textContentType="newPassword"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowConfirmPassword((v) => !v)}
+                  accessibilityLabel={showConfirmPassword ? 'Ocultar confirmação de senha' : 'Exibir confirmação de senha'}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  (isMutating || !editCurrentPassword || !editPassword || editPassword !== editConfirmPassword) && styles.buttonDisabled,
+                ]}
+                onPress={saveEdit}
+                disabled={isMutating || !editCurrentPassword || !editPassword || editPassword !== editConfirmPassword}
+              >
                 {isMutating ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Salvar</Text>}
               </TouchableOpacity>
             </ScrollView>
@@ -357,6 +442,31 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: THEME.card,
     color: THEME.text,
+  },
+  passwordFieldWrap: {
+    width: '100%',
+    position: 'relative',
+  },
+  passwordInputBase: {
+    marginBottom: 4,
+  },
+  passwordInput: {
+    paddingRight: 44,
+  },
+  helperText: {
+    width: '100%',
+    color: THEME.muted,
+    fontSize: 12,
+    marginTop: -6,
+    marginBottom: 12,
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    height: 45,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   saveButton: {
     height: 48,

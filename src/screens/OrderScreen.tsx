@@ -3,9 +3,9 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
-  Switch,
   Alert,
   TextInput,
   ActivityIndicator,
@@ -57,18 +57,23 @@ const OrdersScreen: React.FC = () => {
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
-  const [isConcludedFilter, setIsConcludedFilter] = useState<boolean>(false);
+  const [selectedStatus, setSelectedStatus] = useState<EOrderStatus>('PENDING');
   const [filterText, setFilterText] = useState<string>("");
 
   const [openStatusMenuId, setOpenStatusMenuId] = useState<number | null>(null);
 
   const isLoadingAny = isLoading || isLoadingProducts;
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (orderStatus?: EOrderStatus) => {
     setIsLoading(true);
     try {
       const token = await getToken();
-      const response = await fetchWithTimeout(`${API_URL}/orders`, {
+
+      const url = orderStatus
+        ? `${API_URL}/orders?orderStatus=${encodeURIComponent(orderStatus)}`
+        : `${API_URL}/orders`;
+
+      const response = await fetchWithTimeout(url, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -118,28 +123,26 @@ const OrdersScreen: React.FC = () => {
 
   useFocusEffect(
     useCallback(() => {
-      fetchOrders();
+      fetchOrders(selectedStatus);
       fetchProducts();
-    }, [fetchOrders, fetchProducts])
+    }, [fetchOrders, fetchProducts, selectedStatus])
   );
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([fetchOrders(), fetchProducts()]);
-  }, [fetchOrders, fetchProducts]);
+    await Promise.all([fetchOrders(selectedStatus), fetchProducts()]);
+  }, [fetchOrders, fetchProducts, selectedStatus]);
 
   const filteredOrders = useMemo(() => {
-    const status = isConcludedFilter ? "CONCLUDED" : null;
     const q = (filterText || "").toString().trim().toLowerCase();
 
     return orders
-      .filter((order) => (status ? order.orderStatus === status : order.orderStatus !== 'CONCLUDED'))
       .filter((order) => {
         if (!q) return true;
         const customer = (order.customer || "").toString().toLowerCase();
         const table = (order.tableNumber || "").toString().toLowerCase();
         return customer.includes(q) || table.includes(q);
       });
-  }, [orders, isConcludedFilter, filterText]);
+  }, [orders, filterText]);
 
   const handleOpenNew = () => {
     setEditingOrder(null);
@@ -208,7 +211,7 @@ const OrdersScreen: React.FC = () => {
 
         setIsModalVisible(false);
         setEditingOrder(null);
-        fetchOrders();
+        fetchOrders(selectedStatus);
         return;
 
       } catch (e: any) {
@@ -246,7 +249,7 @@ const OrdersScreen: React.FC = () => {
 
         setIsModalVisible(false);
         setEditingOrder(null);
-        fetchOrders();
+        fetchOrders(selectedStatus);
       } catch (e: any) {
         Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao atualizar o pedido.');
       } finally {
@@ -287,7 +290,7 @@ const OrdersScreen: React.FC = () => {
         if (updated && updated.id != null) {
           setOrders((prev) => prev.map((o) => (o.id === updated!.id ? { ...o, ...updated! } : o)));
         } else {
-          await fetchOrders();
+          await fetchOrders(selectedStatus);
         }
       } catch (e: any) {
         Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao atualizar o status do pedido.');
@@ -295,7 +298,7 @@ const OrdersScreen: React.FC = () => {
         setIsLoading(false);
       }
     },
-    [dispatch, fetchOrders]
+    [dispatch, fetchOrders, selectedStatus]
   );
 
   const confirmChangeStatus = (orderId: number, nextStatus: EOrderStatus) => {
@@ -437,14 +440,30 @@ const OrdersScreen: React.FC = () => {
         </View>
       </View>
 
-      <View style={styles.switchContainer}>
-        <Text style={styles.switchLabel}>Exibindo: {isConcludedFilter ? "Concluídos" : "Pendentes"}</Text>
-        <Switch
-          value={isConcludedFilter}
-          onValueChange={setIsConcludedFilter}
-          thumbColor={isConcludedFilter ? THEME.primary : THEME.primary}
-          trackColor={{ false: THEME.border, true: "#ddd" }}
-        />
+      <View style={styles.statusFilterWrap}>
+        <Text style={styles.statusFilterLabel}>Status:</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusFilterList}>
+          {(Object.keys(STATUS_LABELS_PT) as EOrderStatus[]).map((s) => {
+            const isSelected = s === selectedStatus;
+            return (
+              <TouchableOpacity
+                key={s}
+                style={[styles.statusPill, isSelected ? styles.statusPillSelected : styles.statusPillUnselected]}
+                onPress={() => {
+                  if (isLoading) return;
+                  setOpenStatusMenuId(null);
+                  setSelectedStatus(s);
+                  fetchOrders(s);
+                }}
+                disabled={isLoading}
+              >
+                <Text style={[styles.statusPillText, isSelected ? styles.statusPillTextSelected : styles.statusPillTextUnselected]}>
+                  {STATUS_LABELS_PT[s]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       <FlatList
@@ -557,14 +576,46 @@ const styles = StyleSheet.create({
   status: { fontSize: 14, fontWeight: "700", marginVertical: 5, color: THEME.muted },
   totalValue: { fontSize: 16, fontWeight: "700", color: THEME.success },
   emptyText: { textAlign: "center", color: "#9ca3af", marginTop: 20 },
-  switchContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
+  statusFilterWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     marginBottom: 10,
-    alignItems: "center",
   },
-  switchLabel: { fontSize: 16, fontWeight: "700", color: "#111827" },
+  statusFilterLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: "#111827",
+    marginRight: 10,
+  },
+  statusFilterList: {
+    paddingRight: 8,
+  },
+  statusPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  statusPillSelected: {
+    backgroundColor: THEME.primary,
+    borderColor: THEME.primary,
+  },
+  statusPillUnselected: {
+    backgroundColor: THEME.card,
+    borderColor: THEME.border,
+  },
+  statusPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  statusPillTextSelected: {
+    color: '#fff',
+  },
+  statusPillTextUnselected: {
+    color: THEME.muted,
+  },
   floatingButton: {
     position: "absolute",
     bottom: 20,

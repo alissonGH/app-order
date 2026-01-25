@@ -1,9 +1,21 @@
 export const DEFAULT_BACKEND_ERROR_MESSAGE = 'Erro não esperado, reporte ao administrador.';
 
 export function normalizeMessage(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const msg = value.trim();
-  return msg ? msg : null;
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    const msg = value.trim();
+    return msg ? msg : null;
+  }
+
+  if (value instanceof Error) {
+    return normalizeMessage(value.message);
+  }
+
+  if (typeof value === 'object' && 'message' in (value as any)) {
+    return normalizeMessage((value as any).message);
+  }
+
+  return null;
 }
 
 function extractMessageFieldFromJson(data: unknown): string | null {

@@ -150,6 +150,11 @@ const DeviceScreen: React.FC = () => {
       return;
     }
 
+    if ((password || '').length < 6) {
+      Alert.alert('Erro', 'Senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
     setIsMutating(true);
     try {
       const token = await getToken();
@@ -229,6 +234,11 @@ const DeviceScreen: React.FC = () => {
     const password = (newPassword || '').toString();
     if (!password) {
       Alert.alert('Erro', 'Senha é obrigatória.');
+      return;
+    }
+
+    if ((password || '').length < 6) {
+      Alert.alert('Erro', 'Senha deve ter no mínimo 6 caracteres.');
       return;
     }
 
@@ -423,12 +433,13 @@ const DeviceScreen: React.FC = () => {
                     onChangeText={setCreateDescription}
                   />
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, styles.passwordInputBase]}
                     placeholder="Senha"
                     value={createPassword}
                     onChangeText={setCreatePassword}
                     secureTextEntry
                   />
+                  <Text style={styles.helperText}>Mínimo 6 caracteres.</Text>
                 </>
               ) : modalMode === 'password' ? (
                 <>
@@ -436,12 +447,13 @@ const DeviceScreen: React.FC = () => {
                     {selectedDevice?.description || 'Dispositivo'} ({selectedDevice?.deviceUid || '-'})
                   </Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, styles.passwordInputBase]}
                     placeholder="Nova senha"
                     value={newPassword}
                     onChangeText={setNewPassword}
                     secureTextEntry
                   />
+                  <Text style={styles.helperText}>Mínimo 6 caracteres.</Text>
                 </>
               ) : (
                 <>
@@ -631,6 +643,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: THEME.card,
     color: THEME.text,
+  },
+  passwordInputBase: {
+    marginBottom: 4,
+  },
+  helperText: {
+    color: THEME.muted,
+    fontSize: 12,
+    width: '100%',
+    paddingHorizontal: 12,
+    marginBottom: 12,
   },
   saveButton: {
     paddingVertical: 12,

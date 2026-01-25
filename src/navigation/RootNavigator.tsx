@@ -3,6 +3,7 @@ import { createStackNavigator } from "@react-navigation/stack";
 import { useDispatch, useSelector } from "react-redux";
 import { ActivityIndicator, View } from "react-native";
 import LoginScreen from "../screens/LoginScreen";
+import CreateAccountScreen from "../screens/CreateAccountScreen";
 import HomeScreen from "../screens/HomeScreen";
 import OrderScreen from "../screens/OrderScreen";
 import ProductScreen from "../screens/ProductScreen";
@@ -127,11 +128,10 @@ const RootNavigator = () => {
             )}
           </>
         ) : (
-          <Stack.Screen
-            name="Login"
-            component={LoginScreen}
-            options={{ headerShown: false }}
-          />
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="CreateAccount" component={CreateAccountScreen} options={{ headerShown: false }} />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>

@@ -1,3 +1,1 @@
-import { Platform } from 'react-native';
-
 export const API_URL = 'http://192.168.3.12:8080';

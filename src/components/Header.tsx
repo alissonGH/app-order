@@ -223,6 +223,7 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     padding: 5,
+    marginTop: 4,
   },
   rightSpacer: {
     width: 34,
@@ -230,6 +231,7 @@ const styles = StyleSheet.create({
   titleWrap: {
     flex: 1,
     alignItems: 'center',
+    marginTop: 4,
   },
 
   modalRoot: {
