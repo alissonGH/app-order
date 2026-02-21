@@ -3,6 +3,9 @@ import { createStackNavigator } from "@react-navigation/stack";
 import { useDispatch, useSelector } from "react-redux";
 import { ActivityIndicator, View } from "react-native";
 import LoginScreen from "../screens/LoginScreen";
+import ForgotPasswordScreen from "../screens/ForgotPasswordScreen";
+import ValidateResetCodeScreen from "../screens/ValidateResetCodeScreen";
+import ResetPasswordScreen from "../screens/ResetPasswordScreen";
 import CreateAccountScreen from "../screens/CreateAccountScreen";
 import HomeScreen from "../screens/HomeScreen";
 import OrderScreen from "../screens/OrderScreen";
@@ -130,6 +133,9 @@ const RootNavigator = () => {
         ) : (
           <>
             <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="ValidateResetCode" component={ValidateResetCodeScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ headerShown: false }} />
             <Stack.Screen name="CreateAccount" component={CreateAccountScreen} options={{ headerShown: false }} />
           </>
         )}

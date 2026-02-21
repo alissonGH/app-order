@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,44 +14,52 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 
 import { API_URL } from '../config/api';
 import THEME from '../styles/theme';
 import colors from '../styles/colors';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { extractBackendErrorMessage, normalizeMessage } from '../utils/backendErrorMessage';
+import type { RootStackParamList } from '../navigation/NavigationType';
 import type { NavigationType } from '../navigation/NavigationType';
 
-const CreateAccountScreen: React.FC = () => {
+const REQUEST_TIMEOUT_MS = 15000;
+
+type MessageResponse = {
+  message?: string;
+};
+
+const ResetPasswordScreen: React.FC = () => {
   const navigation = useNavigation<NavigationType>();
+  const route = useRoute<RouteProp<RootStackParamList, 'ResetPassword'>>();
 
-  useEffect(() => {
-    console.warn('[CreateAccount] screen mounted', { API_URL });
-  }, []);
+  const email = route.params.email;
+  const token = route.params.token;
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const handleCreateAccount = async () => {
-    const trimmedEmail = email.trim();
+  const canSubmit = useMemo(() => {
+    if (!newPassword) return false;
+    if ((newPassword || '').length < 6) return false;
+    if (!confirmPassword) return false;
+    if ((confirmPassword || '').length < 6) return false;
+    if (newPassword !== confirmPassword) return false;
+    return true;
+  }, [newPassword, confirmPassword]);
 
-    if (!trimmedEmail) {
-      Alert.alert('Erro', 'Por favor, preencha o email.');
-      return;
-    }
-
-    if (!password) {
+  const handleReset = async () => {
+    if (!newPassword) {
       Alert.alert('Erro', 'Por favor, preencha a senha.');
       return;
     }
 
-    if ((password || '').length < 6) {
+    if ((newPassword || '').length < 6) {
       Alert.alert('Erro', 'Senha deve ter no mínimo 6 caracteres.');
       return;
     }
@@ -66,44 +74,50 @@ const CreateAccountScreen: React.FC = () => {
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (newPassword !== confirmPassword) {
       Alert.alert('Erro', 'Confirmação de senha diferente da senha.');
       return;
     }
 
     setIsLoading(true);
     try {
-      const url = `${API_URL}/users/create`;
-      const payload = {
-        email: trimmedEmail,
-        password,
-      };
-
-      console.warn('[CreateAccount] request', {
-        url,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: { ...payload, password: '***', passwordLength: password.length },
-      });
+      const url = `${API_URL}/auth/reset-password`;
 
       const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
-        timeoutMs: 15000,
+        body: JSON.stringify({ token, newPassword }),
+        timeoutMs: REQUEST_TIMEOUT_MS,
       });
-
-      console.warn('[CreateAccount] response', { status: res.status, ok: res.ok });
 
       if (!res.ok) {
         const backendMsg = await extractBackendErrorMessage(res.clone());
-        Alert.alert('Erro', backendMsg ?? 'Falha ao criar conta.');
+        Alert.alert('Falha', backendMsg ?? 'Falha ao atualizar senha.');
         return;
       }
 
-      Alert.alert('Sucesso', 'Conta criada com sucesso, verifique seu email para ativar a conta.', [
+      let message: string | null = null;
+      try {
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        if (contentType.includes('application/json')) {
+          const json = (await res.json()) as MessageResponse;
+          message = normalizeMessage(json?.message);
+        } else {
+          const text = await res.text();
+          try {
+            const parsed = JSON.parse(text) as MessageResponse;
+            message = normalizeMessage(parsed?.message);
+          } catch {
+            message = normalizeMessage(text);
+          }
+        }
+      } catch {
+        message = null;
+      }
+
+      Alert.alert('Sucesso', message ?? 'Senha atualizada.', [
         {
           text: 'OK',
           onPress: () => navigation.navigate('Login'),
@@ -111,10 +125,7 @@ const CreateAccountScreen: React.FC = () => {
       ]);
     } catch (e: any) {
       const msg = normalizeMessage(e);
-      Alert.alert(
-        'Erro',
-        msg ?? `Falha ao criar conta. Não foi possível conectar ao servidor em ${API_URL}.`
-      );
+      Alert.alert('Falha', msg ?? `Não foi possível conectar ao servidor em ${API_URL}.`);
     } finally {
       setIsLoading(false);
     }
@@ -127,31 +138,25 @@ const CreateAccountScreen: React.FC = () => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 20}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.inner}>
-            <Text style={styles.title}>Criar conta</Text>
+            <Text style={styles.title}>Alterar senha</Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor={THEME.muted}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              textContentType="emailAddress"
-              autoComplete="email"
-            />
+            <Text style={styles.description}>Digite e confirme a nova senha para {email}</Text>
 
             <View style={styles.passwordFieldWrap}>
               <TextInput
                 style={[styles.input, styles.passwordInput, styles.passwordInputBase]}
-                placeholder="Senha"
+                placeholder="Nova senha"
                 placeholderTextColor={THEME.muted}
-                value={password}
-                onChangeText={setPassword}
+                value={newPassword}
+                onChangeText={setNewPassword}
                 secureTextEntry={!showPassword}
                 textContentType="newPassword"
+                editable={!isLoading}
               />
               <TouchableOpacity
                 style={styles.eyeButton}
@@ -159,7 +164,11 @@ const CreateAccountScreen: React.FC = () => {
                 accessibilityLabel={showPassword ? 'Ocultar senha' : 'Exibir senha'}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={THEME.muted}
+                />
               </TouchableOpacity>
             </View>
             <Text style={styles.helperText}>Mínimo 6 caracteres.</Text>
@@ -173,6 +182,7 @@ const CreateAccountScreen: React.FC = () => {
                 onChangeText={setConfirmPassword}
                 secureTextEntry={!showConfirmPassword}
                 textContentType="newPassword"
+                editable={!isLoading}
               />
               <TouchableOpacity
                 style={styles.eyeButton}
@@ -180,16 +190,24 @@ const CreateAccountScreen: React.FC = () => {
                 accessibilityLabel={showConfirmPassword ? 'Ocultar confirmação de senha' : 'Exibir confirmação de senha'}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={THEME.muted}
+                />
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity
-              onPress={handleCreateAccount}
-              style={[styles.button, isLoading && styles.buttonDisabled]}
-              disabled={isLoading}
+              onPress={handleReset}
+              style={[styles.button, (!canSubmit || isLoading) && styles.buttonDisabled]}
+              disabled={!canSubmit || isLoading}
             >
-              {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Criar conta</Text>}
+              {isLoading ? (
+                <ActivityIndicator color={colors.textLight} />
+              ) : (
+                <Text style={styles.buttonText}>Enviar</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -216,8 +234,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 16,
     color: colors.primary,
+  },
+  description: {
+    width: '100%',
+    color: THEME.muted,
+    fontSize: 14,
+    paddingHorizontal: 10,
+    marginBottom: 12,
   },
   input: {
     width: '100%',
@@ -245,7 +270,7 @@ const styles = StyleSheet.create({
     color: THEME.muted,
     fontSize: 12,
     paddingHorizontal: 10,
-    marginBottom: 5,
+    marginBottom: 15,
   },
   eyeButton: {
     position: 'absolute',
@@ -264,10 +289,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.7,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.textLight,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -297,4 +322,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default CreateAccountScreen;
+export default ResetPasswordScreen;

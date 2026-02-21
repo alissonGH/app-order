@@ -33,7 +33,7 @@ export interface Order {
 }
 
 export interface Device {
-  id?: number;
+  id?: string;
   tenantId?: string;
   user?: unknown;
   deviceUid?: string;

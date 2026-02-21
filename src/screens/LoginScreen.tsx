@@ -134,7 +134,10 @@ const LoginScreen = () => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 20}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.inner}>
             <Text style={styles.title}>Login</Text>
             {loginMode === 'user' ? (
@@ -168,6 +171,20 @@ const LoginScreen = () => {
                     <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
                   </TouchableOpacity>
                 </View>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowPassword(false);
+                    navigation.navigate('ForgotPassword');
+                  }}
+                  style={styles.forgotPasswordButton}
+                  disabled={isLoading}
+                >
+                  <Text style={[styles.forgotPasswordText, isLoading && styles.forgotPasswordTextDisabled]}>
+                    Esqueci minha senha
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity onPress={handleLogin} style={[styles.button, isLoading && styles.buttonDisabled]} disabled={isLoading}>
                   {isLoading ? (
                     <ActivityIndicator color="#fff" />
@@ -181,11 +198,11 @@ const LoginScreen = () => {
                     setShowPassword(false);
                     setLoginMode('device');
                   }}
-                  style={[styles.secondaryButton, isLoading && styles.secondaryButtonDisabled]}
+                  style={[styles.secondaryButton, styles.secondaryButtonBlue, isLoading && styles.secondaryButtonDisabled]}
                   disabled={isLoading}
                 >
-                  <Ionicons name="phone-portrait-outline" size={20} color={colors.primary} style={styles.secondaryButtonIcon} />
-                  <Text style={styles.secondaryButtonText}>Entrar com dispositivo</Text>
+                  <Ionicons name="phone-portrait-outline" size={20} color={THEME.primary} style={styles.secondaryButtonIcon} />
+                  <Text style={[styles.secondaryButtonText, styles.secondaryButtonTextBlue]}>Entrar com dispositivo</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -247,18 +264,6 @@ const LoginScreen = () => {
                   <Ionicons name="arrow-back-outline" size={20} color={colors.primary} style={styles.secondaryButtonIcon} />
                   <Text style={styles.secondaryButtonText}>Voltar para login</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowDevicePassword(false);
-                    navigation.navigate('CreateAccount');
-                  }}
-                  style={[styles.secondaryButton, isLoading && styles.secondaryButtonDisabled]}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="person-add-outline" size={20} color={colors.primary} style={styles.secondaryButtonIcon} />
-                  <Text style={styles.secondaryButtonText}>Criar conta</Text>
-                </TouchableOpacity>
               </>
             )}
           </View>
@@ -312,6 +317,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  forgotPasswordButton: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: -4,
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  forgotPasswordText: {
+    color: THEME.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  forgotPasswordTextDisabled: {
+    opacity: 0.6,
+  },
   button: {
     width: '100%',
     height: 50,
@@ -342,6 +362,9 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     paddingHorizontal: 16,
   },
+  secondaryButtonBlue: {
+    borderColor: THEME.primary,
+  },
   secondaryButtonDisabled: {
     opacity: 0.6,
   },
@@ -352,6 +375,9 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  secondaryButtonTextBlue: {
+    color: THEME.primary,
   },
 });
 

@@ -289,9 +289,9 @@ const OrdersScreen: React.FC = () => {
 
         if (updated && updated.id != null) {
           setOrders((prev) => prev.map((o) => (o.id === updated!.id ? { ...o, ...updated! } : o)));
-        } else {
-          await fetchOrders(selectedStatus);
         }
+
+        await fetchOrders(selectedStatus);
       } catch (e: any) {
         Alert.alert('Erro', normalizeMessage(e) ?? 'Ocorreu um erro ao atualizar o status do pedido.');
       } finally {

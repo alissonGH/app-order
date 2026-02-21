@@ -410,6 +410,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   scrollCharts: {
+    width: '100%',
     alignItems: 'center',
     paddingBottom: 12,
   },

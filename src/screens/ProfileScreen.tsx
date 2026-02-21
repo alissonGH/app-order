@@ -26,7 +26,7 @@ import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { extractBackendErrorMessage, normalizeMessage } from '../utils/backendErrorMessage';
 
 type UserDto = Record<string, any> & {
-  id?: number | string;
+  id?: string;
   email?: string;
 };
 
@@ -39,12 +39,12 @@ function isInvalidCurrentPasswordError(message: string | null | undefined): bool
   return hasCurrentPassword && saysInvalid;
 }
 
-function toIdNumber(id: unknown): number | null {
-  if (typeof id === 'number' && Number.isFinite(id)) return id;
+function toIdString(id: unknown): string | null {
   if (typeof id === 'string') {
-    const n = Number(id);
-    if (Number.isFinite(n)) return n;
+    const s = id.trim();
+    return s ? s : null;
   }
+  if (typeof id === 'number' && Number.isFinite(id)) return String(id);
   return null;
 }
 
@@ -64,7 +64,7 @@ const ProfileScreen: React.FC = () => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const userId = useMemo(() => toIdNumber(user?.id), [user]);
+  const userId = useMemo(() => toIdString(user?.id), [user]);
 
   const loadProfile = useCallback(async () => {
     setIsLoading(true);
@@ -94,11 +94,11 @@ const ProfileScreen: React.FC = () => {
         meJson = null;
       }
 
-      const meId = toIdNumber(meJson?.id);
+      const meId = toIdString(meJson?.id);
 
       // 2) se tiver id, usa a rota oficial /users/{id}
       if (meId != null) {
-        const res = await fetchWithTimeout(`${API_URL}/users/${meId}`, {
+        const res = await fetchWithTimeout(`${API_URL}/users/${encodeURIComponent(meId)}`, {
           headers: { Authorization: `Bearer ${token}` },
           timeoutMs: 10000,
         });
@@ -167,11 +167,6 @@ const ProfileScreen: React.FC = () => {
       return;
     }
 
-    if ((currentPassword || '').length < 6) {
-      Alert.alert('Erro', 'Senha deve ter no mínimo 6 caracteres.');
-      return;
-    }
-
     if (!password) {
       Alert.alert('Erro', 'Senha é obrigatória.');
       return;
@@ -203,7 +198,7 @@ const ProfileScreen: React.FC = () => {
 
       const payload: any = { currentPassword, password };
 
-      const res = await fetchWithTimeout(`${API_URL}/users/${id}/password`, {
+      const res = await fetchWithTimeout(`${API_URL}/users/${encodeURIComponent(id)}/password`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -314,9 +309,11 @@ const ProfileScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
 
+              <Text style={styles.helperText}>Mínimo 6 caracteres.</Text>
+
               <View style={styles.passwordFieldWrap}>
                 <TextInput
-                  style={[styles.input, styles.passwordInput, styles.passwordInputBase]}
+                  style={[styles.input, styles.passwordInput]}
                   placeholder="Confirme a nova senha"
                   value={editConfirmPassword}
                   onChangeText={setEditConfirmPassword}
@@ -457,8 +454,8 @@ const styles = StyleSheet.create({
     width: '100%',
     color: THEME.muted,
     fontSize: 12,
-    marginTop: -6,
-    marginBottom: 12,
+    paddingHorizontal: 10,
+    marginBottom: 5,
   },
   eyeButton: {
     position: 'absolute',
