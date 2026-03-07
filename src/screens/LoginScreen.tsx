@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useDispatch } from 'react-redux';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { setAuthKind, setToken } from '../auth/authSlice';
 import { saveAuthKind, saveToken } from '../auth/tokenStorage';
 import { API_URL } from '../config/api';
@@ -24,7 +25,66 @@ const LoginScreen = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showDevicePassword, setShowDevicePassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const dispatch = useDispatch();
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      const signInResult = await GoogleSignin.signIn();
+      const idToken = signInResult.data?.idToken;
+
+      if (!idToken) {
+        throw new Error('Não foi possível obter o token do Google.');
+      }
+
+      const response = await fetchWithTimeout(`${API_URL}/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idToken }),
+        timeoutMs: LOGIN_REQUEST_TIMEOUT_MS,
+      });
+
+      if (!response.ok) {
+        const fallback = 'Erro ao autenticar com Google. Tente novamente mais tarde.';
+        const backendMsg = await extractBackendErrorMessage(response.clone(), fallback);
+        Alert.alert('Erro no Login', backendMsg);
+        return;
+      }
+
+      const token = await response.text();
+
+      if (!token) {
+        throw new Error('Token não recebido do servidor.');
+      }
+
+      await saveToken(token);
+      await saveAuthKind('user');
+      dispatch(setToken(token));
+      dispatch(setAuthKind('user'));
+    } catch (error: any) {
+      if (error?.code === statusCodes.SIGN_IN_CANCELLED) {
+        return; // Usuário cancelou o login
+      }
+      if (error?.code === statusCodes.IN_PROGRESS) {
+        return; // Login já em progresso
+      }
+      if (error?.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Erro', 'Google Play Services não está disponível neste dispositivo.');
+        return;
+      }
+      if (error?.code === 'ETIMEDOUT') {
+        Alert.alert('Falha no login, contate o administrador.');
+        return;
+      }
+      Alert.alert('Erro no Login', normalizeMessage(error) ?? 'Ocorreu um erro inesperado.');
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -216,6 +276,30 @@ const LoginScreen = () => {
                   <Ionicons name="person-add-outline" size={20} color={colors.primary} style={styles.secondaryButtonIcon} />
                   <Text style={styles.secondaryButtonText}>Criar conta</Text>
                 </TouchableOpacity>
+
+                <View style={styles.dividerContainer}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>ou</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <TouchableOpacity
+                  onPress={handleGoogleLogin}
+                  style={[styles.googleButton, (isLoading || isGoogleLoading) && styles.secondaryButtonDisabled]}
+                  disabled={isLoading || isGoogleLoading}
+                >
+                  {isGoogleLoading ? (
+                    <ActivityIndicator color="#444" />
+                  ) : (
+                    <>
+                      <Image
+                        source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+                        style={styles.googleIcon}
+                      />
+                      <Text style={styles.googleButtonText}>Entrar com Google</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </>
             ) : (
               <>
@@ -378,6 +462,49 @@ const styles = StyleSheet.create({
   },
   secondaryButtonTextBlue: {
     color: THEME.primary,
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 18,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: THEME.border,
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    color: THEME.muted,
+    fontSize: 14,
+  },
+  googleButton: {
+    width: '100%',
+    height: 50,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#dadce0',
+    paddingHorizontal: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+  },
+  googleIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 10,
+  },
+  googleButtonText: {
+    color: '#3c4043',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

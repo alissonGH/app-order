@@ -1,0 +1,55 @@
+import { ExpoConfig, ConfigContext } from 'expo/config';
+
+export default ({ config }: ConfigContext): ExpoConfig => ({
+  ...config,
+  name: 'app-order',
+  slug: 'app-order',
+  version: '1.0.0',
+  orientation: 'default',
+  icon: './assets/icon.png',
+  userInterfaceStyle: 'light',
+  newArchEnabled: true,
+  splash: {
+    image: './assets/splash-icon.png',
+    resizeMode: 'contain',
+    backgroundColor: '#ffffff',
+  },
+  ios: {
+    supportsTablet: true,
+    infoPlist: {
+      NSBluetoothAlwaysUsageDescription:
+        'Necessário para conectar a impressoras térmicas via Bluetooth.',
+      NSBluetoothPeripheralUsageDescription:
+        'Necessário para comunicar com dispositivos Bluetooth.',
+      NSLocationWhenInUseUsageDescription:
+        'Necessário para descoberta de dispositivos Bluetooth no Android/iOS em algumas versões.',
+    },
+  },
+  android: {
+    adaptiveIcon: {
+      foregroundImage: './assets/adaptive-icon.png',
+      backgroundColor: '#ffffff',
+    },
+    package: 'com.alissonf27.apporder',
+    permissions: [
+      'BLUETOOTH',
+      'BLUETOOTH_ADMIN',
+      'BLUETOOTH_CONNECT',
+      'BLUETOOTH_SCAN',
+      'ACCESS_FINE_LOCATION',
+    ],
+  },
+  web: {
+    favicon: './assets/favicon.png',
+  },
+  extra: {
+    googleClientId: process.env.GOOGLE_CLIENT_ID,
+    eas: {
+      projectId: 'f1382514-8e72-44d4-b2e7-a1a2e363b565',
+    },
+  },
+  plugins: [
+    'expo-secure-store',
+    '@react-native-google-signin/google-signin',
+  ],
+});
